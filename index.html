@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Livro de Ronda Digital — 3º BPRv</title>
+
+<!-- Firebase SDK -->
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { getFirestore, collection, addDoc, getDocs, doc, deleteDoc, query, where, orderBy, serverTimestamp }
+  from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+// ── CONFIGURAÇÃO FIREBASE ─────────────────────────
+// Substitua com os dados do seu projeto Firebase
+// Console Firebase → Configurações do projeto → Seus apps → SDK
+const firebaseConfig = {
+  apiKey:            "AIzaSyCNrhC9tfS-qzEnj22mAA0VMULeP3abk70",
+  authDomain:        "passagemserv3bprv.firebaseapp.com",
+  projectId:         "passagemserv3bprv",
+  storageBucket:     "passagemserv3bprv.firebasestorage.app",
+  messagingSenderId: "6420472559",
+  appId:             "1:6420472559:web:132cf3fc9a0bbbcdf2711a"
+};
+
+let db = null;
+let fbOk = false;
+
+try {
+  const app = initializeApp(firebaseConfig);
+  db = getFirestore(app);
+  fbOk = firebaseConfig.apiKey !== 'AIzaSyCNrhC9tfS-qzEnj22mAA0VMULeP3abk70';
+  if (fbOk) {
+    document.getElementById('fb-status').textContent = '✓ Firebase conectado';
+    document.getElementById('fb-status').style.color = '#3B6D11';
+  } else {
+    document.getElementById('fb-status').textContent = '⚠ Configure o Firebase na aba Configurações';
+    document.getElementById('fb-status').style.color = '#854F0B';
+  }
+} catch(e) {
+  document.getElementById('fb-status').textContent = '✗ Erro Firebase: ' + e.message;
+  document.getElementById('fb-status').style.color = '#A32D2D';
+}
+
+// ── SALVAR NO FIRESTORE ───────────────────────────
+window.salvarFirestore = async function(dados) {
+  if (!fbOk) return null;
+  try {
+    // 1. Salvar relatório principal
+    const relRef = await addDoc(collection(db, 'relatorios'), {
+      ...dados.relatorio,
+      status: dados.status,
+      created_at: serverTimestamp(),
+      qtd_bops: dados.bop_rondas.length,
+      qtd_vtrs: dados.viaturas.length
+    });
+    const relId = relRef.id;
+
+    // 2. Salvar BOp rondadas
+    for (const bop of dados.bop_rondas) {
+      const bopRef = await addDoc(collection(db, 'bop_rondas'), {
+        relatorio_id: relId,
+        ...bop,
+        integrantes: undefined
+      });
+      for (const int of (bop.integrantes || [])) {
+        await addDoc(collection(db, 'bop_integrantes'), {
+          bop_ronda_id: bopRef.id,
+          relatorio_id: relId,
+          ...int
+        });
+      }
+    }
+
+    // 3. Salvar viaturas
+    for (const vtr of dados.viaturas) {
+      const vtrRef = await addDoc(collection(db, 'viaturas'), {
+        relatorio_id: relId,
+        ...vtr,
+        integrantes: undefined
+      });
+      for (const int of (vtr.integrantes || [])) {
+        await addDoc(collection(db, 'vtr_integrantes'), {
+          viatura_id: vtrRef.id,
+          relatorio_id: relId,
+          ...int
+        });
+      }
+    }
+
+    return relId;
+  } catch(e) {
+    throw new Error('Firestore: ' + e.message);
+  }
+};
+
+// ── BUSCAR DO FIRESTORE ───────────────────────────
+window.buscarFirestore = async function(filtros) {
+  if (!fbOk) return null;
+  try {
+    let q = collection(db, 'relatorios');
+    const snap = await getDocs(query(q, orderBy('created_at', 'desc')));
+    let lista = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    if (filtros.opm)   lista = lista.filter(r => r.opm && r.opm.toLowerCase().includes(filtros.opm.toLowerCase()));
+    if (filtros.of)    lista = lista.filter(r => r.oficial && r.oficial.toLowerCase().includes(filtros.of.toLowerCase()));
+    if (filtros.di)    lista = lista.filter(r => r.data_ronda && r.data_ronda >= filtros.di);
+    if (filtros.df)    lista = lista.filter(r => r.data_ronda && r.data_ronda <= filtros.df);
+
+    return lista;
+  } catch(e) {
+    throw new Error('Firestore: ' + e.message);
+  }
+};
+
+// ── EXCLUIR DO FIRESTORE ──────────────────────────
+window.excluirFirestore = async function(id) {
+  if (!fbOk) return;
+  await deleteDoc(doc(db, 'relatorios', id));
+};
+</script>
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&family=JetBrains+Mono:wght@400&display=swap');
+:root{
+  --navy:#0f2640;--navy-mid:#1a3a5c;--teal:#0F6E56;
+  --gok:#3B6D11;--gok-bg:#EAF3DE;
+  --rnok:#A32D2D;--rnok-bg:#FCEBEB;
+  --amber:#854F0B;--amber-bg:#FAEEDA;
+  --s:#fff;--s2:#f4f7fc;--s3:#edf0f7;
+  --bd:#d8dde8;--bd2:#eaecf4;
+  --tx:#0f1f30;--tx2:#4a5568;--tx3:#8898aa;
+  --r:8px;--rl:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Barlow',sans-serif;font-size:14px;background:var(--s2);color:var(--tx);line-height:1.5}
+
+/* TOPBAR */
+.topbar{background:var(--navy);position:sticky;top:0;z-index:100;box-shadow:0 2px 12px rgba(0,0,0,.25)}
+.topbar-inner{max-width:1000px;margin:0 auto;padding:0 18px;display:flex;align-items:center;height:56px;gap:12px}
+.tlogo{width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.12);display:flex;align-items:center;justify-content:center;font-family:'Barlow Condensed',sans-serif;font-size:9px;font-weight:700;color:#fff;flex-shrink:0;text-align:center;line-height:1.2}
+.ttitle{font-family:'Barlow Condensed',sans-serif;font-size:15px;font-weight:700;color:#fff}
+.tsub{font-size:10px;color:rgba(255,255,255,.45);margin-top:1px}
+.tfb{font-size:11px;font-weight:600;margin-left:10px}
+.tnav{margin-left:auto;display:flex;gap:3px}
+.tnav button{background:none;border:none;color:rgba(255,255,255,.6);font-family:'Barlow',sans-serif;font-size:12px;font-weight:600;padding:7px 13px;border-radius:var(--r);cursor:pointer;transition:.15s}
+.tnav button:hover{background:rgba(255,255,255,.08);color:#fff}
+.tnav button.active{background:rgba(255,255,255,.15);color:#fff}
+
+/* LAYOUT */
+.container{max-width:1000px;margin:0 auto;padding:18px}
+
+/* ABAS */
+.tabs{display:flex;background:var(--s);border:1px solid var(--bd);border-radius:var(--rl) var(--rl) 0 0;border-bottom:none;overflow:hidden;flex-wrap:wrap}
+.tab-btn{background:none;border:none;font-family:'Barlow',sans-serif;font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--tx3);padding:13px 16px;cursor:pointer;border-bottom:3px solid transparent;transition:.15s;white-space:nowrap}
+.tab-btn:hover{color:var(--navy-mid);background:var(--s2)}
+.tab-btn.active{color:var(--navy-mid);border-bottom-color:var(--navy-mid)}
+.tc{display:none}.tc.active{display:block}
+
+/* SEÇÃO */
+.sec{background:var(--s);border:1px solid var(--bd);border-top:none;padding:18px 20px}
+.sec:last-child{border-radius:0 0 var(--rl) var(--rl)}
+.sec+.sec{border-top:1px solid var(--bd2)}
+.stitle{font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--tx3);margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--bd2);display:flex;align-items:center;gap:7px}
+.stitle::before{content:'';width:3px;height:13px;background:var(--navy-mid);border-radius:2px;flex-shrink:0}
+
+/* GRID */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:11px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:11px}
+.g4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:11px}
+.g6{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}
+
+/* CAMPOS */
+.f{display:flex;flex-direction:column;gap:4px}
+.f.sp2{grid-column:span 2}
+.f label{font-size:11px;font-weight:700;letter-spacing:.3px;color:var(--tx2);text-transform:uppercase}
+.f input,.f select,.f textarea{font-family:'Barlow',sans-serif;font-size:13px;padding:8px 10px;border:1px solid var(--bd);border-radius:var(--r);background:var(--s2);color:var(--tx);transition:.15s;width:100%}
+.f input:focus,.f select:focus,.f textarea:focus{outline:none;border-color:var(--navy-mid);box-shadow:0 0 0 3px rgba(26,58,92,.1);background:#fff}
+.f textarea{resize:vertical;min-height:50px}
+.f input[readonly]{color:var(--tx3);background:var(--s3);cursor:default}
+
+/* BOp CHIPS */
+.bchip{padding:8px 4px;border:1px solid var(--bd);border-radius:var(--r);font-family:'Barlow',sans-serif;font-size:12px;font-weight:600;color:var(--tx2);background:var(--s2);cursor:pointer;text-align:center;transition:.12s;width:100%}
+.bchip:hover{border-color:var(--navy-mid);color:var(--navy-mid)}
+.bchip.sel{background:var(--navy-mid);border-color:var(--navy-mid);color:#fff}
+
+/* BLOCO */
+.bwrap{background:var(--s);border:1px solid var(--bd);border-radius:var(--rl);margin-bottom:13px;overflow:hidden}
+.bhdr{padding:10px 15px;display:flex;align-items:center;gap:9px}
+.bhdr-bop{background:var(--navy-mid)}.bhdr-vtr{background:var(--teal)}
+.bnum{background:rgba(255,255,255,.2);color:#fff;font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:700;padding:2px 9px;border-radius:4px}
+.btitle{font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;color:#fff}
+.bsub{font-size:11px;color:rgba(255,255,255,.5);margin-left:auto}
+.bbody{padding:15px}
+
+/* INTEGRANTE */
+.mwrap{border:1px solid var(--bd);border-radius:var(--rl);margin-bottom:9px;overflow:hidden}
+.mhdr{padding:8px 13px;display:flex;align-items:center;justify-content:space-between}
+.mh-eb{background:#E6F1FB;border-bottom:1px solid #B5D4F4}.ml-eb{color:#0C447C}
+.mh-ab{background:#F5F3EE;border-bottom:1px solid #DDD9CE}.ml-ab{color:#4a4540}
+.mh-ev{background:#EAF3DE;border-bottom:1px solid #C0DD97}.ml-ev{color:#27500A}
+.mh-mv{background:#E1F5EE;border-bottom:1px solid #9FE1CB}.ml-mv{color:#085041}
+.mh-av{background:#F5F3EE;border-bottom:1px solid #DDD9CE}.ml-av{color:#4a4540}
+.mlbl{font-size:12px;font-weight:700}
+.mbody{padding:11px 13px}
+.idstrip{background:var(--s2);border-radius:var(--r);padding:10px 12px;margin-bottom:11px}
+
+/* LEGENDA */
+.legend{display:flex;align-items:center;gap:12px;font-size:11px;color:var(--tx2);margin-bottom:9px;flex-wrap:wrap;padding:7px 10px;background:var(--s3);border-radius:var(--r);border:1px solid var(--bd2)}
+.ldot{width:11px;height:11px;border-radius:3px;display:inline-block;flex-shrink:0;border:1px solid rgba(0,0,0,.1)}
+
+/* ITENS */
+.igrid{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:5px}
+.ibtn{display:flex;align-items:center;gap:7px;padding:7px 10px;border-radius:var(--r);border:1px solid var(--bd);background:var(--s2);cursor:pointer;font-family:'Barlow',sans-serif;font-size:12px;font-weight:500;color:var(--tx);text-align:left;transition:.1s;width:100%}
+.ibtn[data-s="1"]{background:var(--gok-bg);border-color:#8dc63f;color:var(--gok)}
+.ibtn[data-s="2"]{background:var(--rnok-bg);border-color:#e57373;color:var(--rnok)}
+.idot{width:10px;height:10px;border-radius:2px;flex-shrink:0;border:1px solid rgba(0,0,0,.12)}
+.ibtn[data-s="0"] .idot{background:#fff}
+.ibtn[data-s="1"] .idot{background:var(--gok);border-color:var(--gok)}
+.ibtn[data-s="2"] .idot{background:var(--rnok);border-color:var(--rnok)}
+.isub{font-family:'Barlow Condensed',sans-serif;font-size:10px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--tx3);margin:9px 0 3px}
+
+/* LOGÍSTICA */
+.logbox{background:var(--s3);border:1px solid var(--bd);border-radius:var(--r);padding:11px 13px;margin-top:11px}
+.logtitle{font-family:'Barlow Condensed',sans-serif;font-size:10px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--tx2);margin-bottom:7px;display:flex;align-items:center;gap:5px}
+.logtitle::before{content:'';width:3px;height:11px;background:var(--navy-mid);border-radius:2px}
+.sep{height:1px;background:var(--bd2);margin:13px 0}
+
+/* BOTÕES */
+.btn-pri{background:var(--navy-mid);color:#fff;border:none;border-radius:var(--r);font-family:'Barlow',sans-serif;font-size:13px;font-weight:700;padding:11px 18px;cursor:pointer;width:100%;transition:.15s}
+.btn-pri:hover{background:var(--navy)}
+.btn-pri:disabled{background:#aaa;cursor:not-allowed}
+.btn-sec{background:#E6F1FB;color:var(--navy-mid);border:1px solid #B5D4F4;border-radius:var(--r);font-family:'Barlow',sans-serif;font-size:13px;font-weight:700;padding:11px 18px;cursor:pointer;width:100%;transition:.15s}
+.btn-add{background:var(--s);color:var(--tx2);border:1px solid var(--bd);border-radius:var(--r);font-family:'Barlow',sans-serif;font-size:11px;font-weight:700;padding:5px 11px;cursor:pointer;margin-right:5px;margin-top:4px;transition:.12s}
+.btn-add:hover{border-color:var(--navy-mid);color:var(--navy-mid);background:#E6F1FB}
+.btn-del{background:var(--rnok-bg);color:var(--rnok);border:1px solid #e57373;border-radius:var(--r);font-family:'Barlow',sans-serif;font-size:11px;font-weight:600;padding:4px 9px;cursor:pointer}
+.btn-wht{margin-left:auto;font-size:11px;font-weight:700;padding:4px 10px;border:1px solid rgba(255,255,255,.3);border-radius:5px;background:transparent;color:#fff;cursor:pointer;font-family:'Barlow',sans-serif}
+
+/* ALERTA */
+.alert{padding:11px 14px;border-radius:var(--r);font-size:13px;font-weight:500;margin-top:10px;display:none;line-height:1.5}
+.alert-ok{background:var(--gok-bg);border:1px solid #8dc63f;color:var(--gok)}
+.alert-err{background:var(--rnok-bg);border:1px solid #e57373;color:var(--rnok)}
+.alert-warn{background:var(--amber-bg);border:1px solid #ffcc02;color:var(--amber)}
+
+/* BADGE */
+.badge{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;padding:3px 9px;border-radius:20px}
+.bfin{background:var(--gok-bg);color:var(--gok)}
+.bdraf{background:var(--amber-bg);color:var(--amber)}
+
+/* CONSULTA */
+.ctable{width:100%;border-collapse:collapse;font-size:13px}
+.ctable th{padding:9px 12px;font-family:'Barlow Condensed',sans-serif;font-size:10px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--tx3);background:var(--s3);border-bottom:1px solid var(--bd);text-align:left}
+.ctable td{padding:10px 12px;border-bottom:1px solid var(--bd2);color:var(--tx);vertical-align:middle}
+.ctable tr:hover td{background:#f0f5ff}
+.empty{padding:36px;text-align:center;color:var(--tx3);font-size:13px}
+
+/* SPINNER */
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* CONFIG CARD */
+.cfg-card{background:var(--navy-mid);border-radius:var(--r);padding:16px 18px;margin-bottom:16px;color:#fff}
+.cfg-card h3{font-family:'Barlow Condensed',sans-serif;font-size:17px;font-weight:700;margin-bottom:6px}
+.cfg-card p{font-size:13px;opacity:.8;line-height:1.6}
+.cfg-card code{background:rgba(255,255,255,.15);border-radius:4px;padding:2px 7px;font-family:'JetBrains Mono',monospace;font-size:12px}
+
+/* PAGE */
+.page{display:none}.page.active{display:block}
+
+/* PRINT */
+@media print{
+  .topbar,.tabs,.btn-pri,.btn-sec,.btn-add,.btn-del,.btn-wht,.tnav{display:none!important}
+  body{background:#fff}
+  .bwrap,.mwrap{break-inside:avoid}
+}
+@media(max-width:640px){
+  .g3,.g4{grid-template-columns:1fr 1fr}
+  .g6{grid-template-columns:repeat(4,1fr)}
+  .igrid{grid-template-columns:1fr}
+  .tsub,.tfb{display:none}
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <div class="tlogo">PM SP<br>BPRv</div>
+    <div>
+      <div class="ttitle">Livro de Ronda Digital — 3º BPRv</div>
+      <div class="tsub">OS Nº 3BPRv-039/03/2023 · NI CPRv-004/300/23</div>
+    </div>
+    <span class="tfb" id="fb-status" style="color:#854F0B">⚠ Aguardando Firebase...</span>
+    <div class="tnav">
+      <button id="nav-form" class="active" onclick="navPage('form')">Nova ronda</button>
+      <button id="nav-consulta" onclick="navPage('consulta')">Consultar</button>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+
+<!-- PÁGINA: FORMULÁRIO -->
+<div id="page-form" class="page active">
+  <div class="tabs">
+    <button class="tab-btn active" onclick="showTab('dados')">Dados da ronda</button>
+    <button class="tab-btn" onclick="showTab('bop')">BOp / Sede</button>
+    <button class="tab-btn" onclick="showTab('viatura')">Viatura</button>
+    <button class="tab-btn" onclick="showTab('config')">Configurações</button>
+  </div>
+
+  <!-- DADOS DA RONDA -->
+  <div id="tab-dados" class="tc active">
+    <div class="sec">
+      <div class="stitle">Identificação da OPM</div>
+      <div class="g3" style="margin-bottom:13px">
+        <div class="f"><label>OPM</label><select id="sel-opm"></select></div>
+        <div class="f"><label>Pelotão</label><select id="sel-pel"></select></div>
+        <div class="f"><label>Oficial responsável</label><select id="sel-of"></select></div>
+      </div>
+      <div class="g3">
+        <div class="f"><label>Motorista — graduação e nome</label><input id="mot-nome" placeholder="Cb PM / Sd PM..."></div>
+        <div class="f"><label>RE do motorista</label><input id="mot-re" placeholder="RE 000000"></div>
+        <div class="f"><label>Tipo sanguíneo</label><input id="mot-tipo" placeholder="O+"></div>
+      </div>
+    </div>
+    <div class="sec">
+      <div class="stitle">Dados da escala</div>
+      <div class="g4" style="margin-bottom:13px">
+        <div class="f"><label>Data</label><input type="date" id="data-r"></div>
+        <div class="f"><label>Hora início</label><input type="time" id="h-ini" value="23:59"></div>
+        <div class="f"><label>Hora término</label><input type="time" id="h-fim"></div>
+        <div class="f"><label>PPRI</label><input id="ppri" placeholder="__/__/__"></div>
+      </div>
+      <div class="g4">
+        <div class="f"><label>KM inicial</label><input type="number" id="km-i" placeholder="0"></div>
+        <div class="f"><label>KM final</label><input type="number" id="km-f" placeholder="0"></div>
+        <div class="f"><label>Nº viatura principal</label><input id="vtr-num" placeholder="PM-00000"></div>
+        <div class="f"><label>Dispensa subsequente?</label>
+          <select id="dispensa"><option value="nao">Não</option><option value="sim">Sim — após 03h30</option></select>
+        </div>
+      </div>
+    </div>
+    <div class="sec">
+      <div class="stitle">Outras novidades</div>
+      <div class="f"><textarea id="obs-nov" placeholder="Registrar tudo que não conste nos demais campos..."></textarea></div>
+    </div>
+    <div class="sec">
+      <div class="stitle">Encaminhar relatório</div>
+      <div class="g3" style="margin-bottom:13px">
+        <div class="f"><label>Destinatário P/3</label><input value="3bprvp3@policiamilitar.sp.gov.br" readonly></div>
+        <div class="f"><label>Cmt de Cia (cópia)</label>
+          <select id="email-cc">
+            <option value="">Selecione a Cia...</option>
+            <option value="3bprv1ciap3@policiamilitar.sp.gov.br">1ª Cia</option>
+            <option value="3bprv2ciap3@policiamilitar.sp.gov.br">2ª Cia</option>
+          </select>
+        </div>
+        <div class="f"><label>CC adicional</label><input type="email" id="email-cc2" placeholder="outro e-mail..."></div>
+      </div>
+      <div class="g2">
+        <button class="btn-sec" onclick="salvar('rascunho')">Salvar rascunho</button>
+        <button class="btn-pri" id="btn-fin" onclick="salvar('finalizado')">Finalizar · Salvar no Firebase</button>
+      </div>
+      <div class="alert alert-ok"  id="alert-ok"></div>
+      <div class="alert alert-err" id="alert-err"></div>
+      <div class="alert alert-warn" id="alert-warn"></div>
+    </div>
+  </div>
+
+  <!-- BOp / SEDE -->
+  <div id="tab-bop" class="tc">
+    <div class="sec">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:13px">
+        <div class="stitle" style="margin:0;padding:0;border:none">
+          BOp / Sede <span id="bop-cnt" style="font-size:11px;font-weight:500;color:var(--tx3);margin-left:4px"></span>
+        </div>
+        <button class="btn-add" onclick="clearBops()">Limpar seleção</button>
+      </div>
+      <div class="g6" id="bop-chips"></div>
+    </div>
+    <div id="bop-blocks">
+      <div class="sec"><p style="color:var(--tx3);font-size:13px;text-align:center;padding:14px 0">Selecione uma ou mais BOp acima para gerar os blocos de registro.</p></div>
+    </div>
+  </div>
+
+  <!-- VIATURA -->
+  <div id="tab-viatura" class="tc">
+    <div class="sec"><button class="btn-add" onclick="addVtr()" style="font-size:13px;padding:8px 16px">+ Adicionar viatura</button></div>
+    <div id="vtr-blocks"></div>
+  </div>
+
+  <!-- CONFIGURAÇÕES -->
+  <div id="tab-config" class="tc">
+    <div class="sec">
+      <div class="cfg-card">
+        <h3>Configurar Firebase</h3>
+        <p>Edite o arquivo <code>index.html</code> e substitua os valores em <code>firebaseConfig</code> pelos dados do seu projeto Firebase.<br>
+        Acesse: <strong>console.firebase.google.com</strong> → Seu projeto → Configurações → Seus apps → SDK de configuração.</p>
+      </div>
+      <div class="stitle">Status da conexão</div>
+      <div style="font-size:13px;margin-bottom:16px">
+        Firebase: <span id="fb-status-cfg" style="font-weight:600">verificando...</span>
+      </div>
+      <div class="stitle">Relatórios salvos localmente (sessão)</div>
+      <div id="saved-list" style="font-size:12px;color:var(--tx3)">Nenhum relatório ainda.</div>
+    </div>
+  </div>
+</div>
+
+<!-- PÁGINA: CONSULTA -->
+<div id="page-consulta" class="page">
+  <div class="tabs"><button class="tab-btn active">Consultar relatórios</button></div>
+  <div class="sec">
+    <div class="stitle">Filtros</div>
+    <div class="g4" style="margin-bottom:13px">
+      <div class="f"><label>OPM</label><input id="f-opm" placeholder="Filtrar por OPM..."></div>
+      <div class="f"><label>Oficial</label><input id="f-of" placeholder="Nome do oficial..."></div>
+      <div class="f"><label>Data início</label><input type="date" id="f-di"></div>
+      <div class="f"><label>Data fim</label><input type="date" id="f-df"></div>
+    </div>
+    <button class="btn-pri" style="width:auto;padding:9px 22px" onclick="buscar()">Buscar</button>
+  </div>
+  <div class="sec" style="padding:0;overflow:hidden">
+    <table class="ctable" id="ctable">
+      <thead><tr><th>Data</th><th>OPM</th><th>Pelotão</th><th>Oficial</th><th>Início</th><th>BOp</th><th>VTR</th><th>Status</th><th>Ações</th></tr></thead>
+      <tbody id="ctbody"></tbody>
+    </table>
+    <div class="empty" id="cempty" style="display:none">Nenhum relatório encontrado.</div>
+  </div>
+</div>
+
+</div><!-- /container -->
+
+<script>
+// ── DADOS ──────────────────────────────────────────
+const BOPS=['304/1','304/2','308/1','310/1','310/2','310/3','310/4','326/1','326/2','326/3','330/5','330/6','330/7','333/1','333/2','334/1','334/2','334/3'];
+const OPM=['3º BPRv','1ª Cia — Araraquara','2ª Cia — Rio Claro','3ª Cia — São José do Rio Preto','4ª Cia — Ribeirão Preto'];
+const PEL=['Sede','1º Pel','2º Pel','3º Pel'];
+const OF=['1º Ten PM Marcelo Ferraz','1º Ten PM Gabriel','1º Ten PM Cutis','1º Ten PM Severo','1º Ten PM Jean','1º Ten PM Tavella','2º Ten PM Ferraz'];
+const IT_T=['Apresentação pessoal e postura','Uniforme regulamentar e completo','Identidade funcional presente','CNH / documentação em ordem','Condições físicas e psíquicas aptas','Armamento de porte — número e condições','Colete balístico — número e condições','Telefone particular autorizado','Conferência com a escala de serviço','Atitude do policial em serviço','Operação de equipamentos verificada','Atendimento ao cidadão — qualidade'];
+const IT_ENC=['Preenchimento correto do controle (PPRI) e CPP','RSO Rv preenchido corretamente'];
+const IT_EB=['Livros e documentações da BOp preenchidos'];
+const IT_EV=['Sinalização de obra na malha viária conferida'];
+const IT_VO=['CPP correto / alterações justificadas','Lançamentos no PPRI conferidos','Ação em desenvolvimento adequada','Odômetro inicial e atual registrados','Abastecimento verificado'];
+const IT_VC=['Limpeza interna e externa da viatura','Sistema de iluminação operacional','Equipamentos (radar, etilômetro, etc.)','Manutenção 1º escalão em dia','Documentação da viatura presente','Cartão de estacionamento presente'];
+const IT_LOG=['Limpeza e conservação das dependências','Limpeza e conservação das viaturas estacionadas','Controle de estacionamento / cartão','Armamento e materiais bélicos verificados','Equipamentos de telemática e rádio'];
+
+let selBops=new Set(), mCtrl={}, vCount=0, vList=[], savedRels=[];
+
+// ── NAV ────────────────────────────────────────────
+function navPage(p){
+  ['form','consulta'].forEach(x=>{
+    document.getElementById('page-'+x).classList.toggle('active',x===p);
+    document.getElementById('nav-'+x).classList.toggle('active',x===p);
+  });
+  if(p==='consulta') buscar();
+}
+function showTab(t){
+  document.querySelectorAll('.tab-btn').forEach((b,i)=>b.classList.toggle('active',['dados','bop','viatura','config'][i]===t));
+  document.querySelectorAll('.tc').forEach(c=>c.classList.remove('active'));
+  document.getElementById('tab-'+t).classList.add('active');
+  if(t==='config'){
+    const s=document.getElementById('fb-status');
+    document.getElementById('fb-status-cfg').textContent=s.textContent;
+    document.getElementById('fb-status-cfg').style.color=s.style.color;
+  }
+}
+
+// ── SELECTS ────────────────────────────────────────
+function fillSel(id,arr,ph){
+  const s=document.getElementById(id);if(!s)return;
+  const v=s.value;s.innerHTML=`<option value="">${ph}</option>`;
+  arr.forEach(x=>{const o=document.createElement('option');o.value=x;o.textContent=x;s.appendChild(o);});
+  if(arr.includes(v))s.value=v;
+}
+
+// ── BOp CHIPS ──────────────────────────────────────
+function renderBopChips(){
+  const c=document.getElementById('bop-chips');c.innerHTML='';
+  BOPS.forEach(b=>{
+    const btn=document.createElement('button');
+    btn.className='bchip'+(selBops.has(b)?' sel':'');btn.textContent=b;
+    btn.onclick=()=>{selBops.has(b)?selBops.delete(b):selBops.add(b);btn.classList.toggle('sel');renderBopBlocks();updBopCnt();};
+    c.appendChild(btn);
+  });
+  updBopCnt();
+}
+function updBopCnt(){
+  const l=document.getElementById('bop-cnt');
+  l.textContent=selBops.size?`— ${selBops.size} selecionada${selBops.size>1?'s':''}` :'';
+}
+function clearBops(){selBops.clear();renderBopChips();renderBopBlocks();}
+function cycleItem(btn){btn.dataset.s=(parseInt(btn.dataset.s||0)+1)%3;}
+
+function legendHtml(){
+  return `<div class="legend">
+    <strong>Itens:</strong>
+    <span style="display:flex;align-items:center;gap:4px"><span class="ldot" style="background:#fff;border:1px solid #ccc"></span>Não verificado</span>
+    <span style="display:flex;align-items:center;gap:4px"><span class="ldot" style="background:#3B6D11"></span>Correto (1×)</span>
+    <span style="display:flex;align-items:center;gap:4px"><span class="ldot" style="background:#A32D2D"></span>Incorreção (2×)</span>
+    <span style="color:var(--tx3)">3× = limpar</span>
+  </div>`;
+}
+function mkBtns(uid,itens,pfx){
+  return `<div class="igrid">${itens.map((it,i)=>`<button type="button" class="ibtn" data-s="0" id="${uid}_${pfx}${i}" onclick="cycleItem(this)"><span class="idot"></span>${it}</button>`).join('')}</div>`;
+}
+function buildSecs(uid,papel,ctx){
+  let h=`<div class="isub">Pessoal e operações</div>${mkBtns(uid,IT_T,'t')}`;
+  if(papel==='enc'){
+    h+=`<div class="isub" style="margin-top:9px">Documentação — encarregado</div>${mkBtns(uid,IT_ENC,'e')}`;
+    if(ctx==='bop')h+=`<div class="isub" style="margin-top:9px">Livros — BOp</div>${mkBtns(uid,IT_EB,'lb')}`;
+    if(ctx==='vtr')h+=`<div class="isub" style="margin-top:9px">Sinalização viária</div>${mkBtns(uid,IT_EV,'sv')}`;
+  }
+  if(ctx==='vtr'){
+    h+=`<div class="isub" style="margin-top:9px">Operacional da viatura</div>${mkBtns(uid,IT_VO,'vo')}`;
+    h+=`<div class="isub" style="margin-top:9px">Conservação da viatura</div>${mkBtns(uid,IT_VC,'vc')}`;
+  }
+  return h;
+}
+function memberHtml(uid,gradLabel,gradPh,mhCls,mlCls,lbl,papel,ctx){
+  return `<div class="mwrap" id="${uid}">
+    <div class="mhdr ${mhCls}"><span class="mlbl ${mlCls}">${lbl}</span><button class="btn-del" onclick="remMember('${uid}')">Remover</button></div>
+    <div class="mbody">
+      <div class="idstrip">
+        <div class="g4">
+          <div class="f sp2"><label>${gradLabel}</label><input type="text" class="m-nome" placeholder="${gradPh}"></div>
+          <div class="f"><label>RE</label><input type="text" class="m-re" placeholder="RE 000000"></div>
+          <div class="f"><label>Tipo sanguíneo</label><input type="text" class="m-tipo" placeholder="O+"></div>
+        </div>
+        <div class="g4" style="margin-top:9px">
+          <div class="f"><label>Arma Nº</label><input type="text" class="m-arma"></div>
+          <div class="f"><label>Colete Nº</label><input type="text" class="m-colete"></div>
+          <div class="f"><label>Armamento</label><select class="m-arm"><option>Da corporação</option><option>Particular</option></select></div>
+          <div class="f"><label>2ª arma?</label><select class="m-2a"><option value="nao">Não</option><option value="sim">Sim</option></select></div>
+        </div>
+      </div>
+      ${legendHtml()}${buildSecs(uid,papel,ctx)}
+      <div style="margin-top:11px">
+        <label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;color:var(--tx2)">
+          Observações <span style="color:var(--rnok);font-size:10px;font-weight:500;text-transform:none">(obrigatório para itens em vermelho)</span>
+        </label>
+        <textarea id="${uid}_obs" style="width:100%;margin-top:4px;font-family:'Barlow',sans-serif;font-size:13px;padding:8px 10px;border:1px solid var(--bd);border-radius:var(--r);background:var(--s2);color:var(--tx);resize:vertical;min-height:44px" placeholder="Descreva incorreções identificadas..."></textarea>
+      </div>
+    </div>
+  </div>`;
+}
+
+function addMember(scope,papel,maxN,ctx){
+  const key=`${scope}__${papel}`;
+  if(!mCtrl[key])mCtrl[key]=0;
+  if(mCtrl[key]>=maxN){alert(`Limite atingido (máx. ${maxN}).`);return;}
+  mCtrl[key]++;
+  const n=mCtrl[key],uid=`m_${scope}_${papel}_${n}`;
+  const c=document.getElementById(`mlist-${scope}`);if(!c)return;
+  const cfgs={
+    enc_bop:{grad:'Encarregado — Cb/Sd',ph:'Cb PM / Sd PM...',mh:'mh-eb',ml:'ml-eb',lbl:'Encarregado (Cb/Sd)'},
+    aux_bop:{grad:'Auxiliar — Cb/Sd',ph:'Cb PM / Sd PM...',mh:'mh-ab',ml:'ml-ab',lbl:`Auxiliar ${n} (Cb/Sd)`},
+    enc_vtr:{grad:'Encarregado — Subten/Sgt/Cb',ph:'Subten PM / Sgt PM / Cb PM...',mh:'mh-ev',ml:'ml-ev',lbl:'Encarregado'},
+    mot_vtr:{grad:'Motorista — Cb/Sd',ph:'Cb PM / Sd PM...',mh:'mh-mv',ml:'ml-mv',lbl:'Motorista'},
+    aux_vtr:{grad:'Auxiliar — Cb/Sd',ph:'Cb PM / Sd PM...',mh:'mh-av',ml:'ml-av',lbl:`Auxiliar ${n}`}
+  };
+  const cf=cfgs[`${papel}_${ctx}`]||cfgs.aux_bop;
+  const div=document.createElement('div');
+  div.innerHTML=memberHtml(uid,cf.grad,cf.ph,cf.mh,cf.ml,cf.lbl,papel,ctx);
+  c.appendChild(div.firstElementChild);
+}
+function remMember(uid){
+  const el=document.getElementById(uid);if(!el)return;
+  const p=uid.split('_'),scope=p[1]+'_'+p[2],papel=p[3];
+  el.remove();const key=`${scope}__${papel}`;if(mCtrl[key]>0)mCtrl[key]--;
+}
+
+function renderBopBlocks(){
+  const c=document.getElementById('bop-blocks');
+  const toRm=[];c.querySelectorAll('.bwrap').forEach(bl=>{if(!selBops.has(bl.dataset.bop))toRm.push(bl);});
+  toRm.forEach(bl=>bl.remove());
+  if(!selBops.size){
+    if(!c.querySelector('.bwrap'))c.innerHTML='<div class="sec"><p style="color:var(--tx3);font-size:13px;text-align:center;padding:14px 0">Selecione uma ou mais BOp acima para gerar os blocos de registro.</p></div>';
+    return;
+  }
+  c.querySelector('.sec')?.remove();
+  let idx=0;
+  selBops.forEach(bop=>{
+    idx++;if(document.querySelector(`.bwrap[data-bop="${bop}"]`))return;
+    const bid=bop.replace('/','_'),scope=`bop_${bid}`;
+    const bl=document.createElement('div');bl.className='bwrap';bl.dataset.bop=bop;
+    bl.innerHTML=`<div class="bhdr bhdr-bop"><span class="bnum">Ronda ${idx}</span><span class="btitle">${bop}</span><span class="bsub">BOp / Sede</span></div>
+    <div class="bbody">
+      <div class="g2" style="margin-bottom:13px">
+        <div class="f"><label>Horário</label><input type="time" id="bop-${bid}-hora"></div>
+        <div class="f"><label>SP / Km</label><input id="bop-${bid}-spkm" placeholder="00000 km"></div>
+      </div>
+      <div class="stitle">Integrantes</div>
+      <p style="font-size:11px;color:var(--tx3);margin-bottom:9px">Adicione os integrantes e preencha os itens individualmente.</p>
+      <div id="mlist-${scope}"></div>
+      <div style="margin-top:5px">
+        <button class="btn-add" onclick="addMember('${scope}','enc',1,'bop')">+ Encarregado (Cb/Sd)</button>
+        <button class="btn-add" onclick="addMember('${scope}','aux',2,'bop')">+ Auxiliar (Cb/Sd)</button>
+      </div>
+      <div class="sep"></div>
+      <div class="logbox">
+        <div class="logtitle">Logística — item 7</div>
+        ${legendHtml()}
+        <div class="igrid">${IT_LOG.map((it,i)=>`<button type="button" class="ibtn" data-s="0" id="log-${bid}-${i}" onclick="cycleItem(this)"><span class="idot"></span>${it}</button>`).join('')}</div>
+        <div style="margin-top:9px">
+          <label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;color:var(--tx2)">Obs. logísticas</label>
+          <textarea id="log-${bid}-obs" style="width:100%;margin-top:4px;font-family:'Barlow',sans-serif;font-size:13px;padding:8px 10px;border:1px solid var(--bd);border-radius:var(--r);background:var(--s2);color:var(--tx);resize:vertical;min-height:44px" placeholder="Descreva incorreções logísticas..."></textarea>
+        </div>
+      </div>
+      <div class="sep"></div>
+      <div class="f"><label>Observações gerais</label>
+        <textarea id="bop-${bid}-obs" style="width:100%;margin-top:4px;font-family:'Barlow',sans-serif;font-size:13px;padding:8px 10px;border:1px solid var(--bd);border-radius:var(--r);background:var(--s2);color:var(--tx);resize:vertical;min-height:44px" placeholder="Irregularidades gerais ou destaques..."></textarea>
+      </div>
+    </div>`;
+    c.appendChild(bl);
+  });
+}
+
+function addVtr(){
+  vCount++;const n=vCount,scope=`vtr_${n}`;
+  const c=document.getElementById('vtr-blocks');
+  const bl=document.createElement('div');bl.className='bwrap';bl.id=`vb-${n}`;
+  bl.innerHTML=`<div class="bhdr bhdr-vtr"><span class="bnum">Viatura ${n}</span><span class="btitle" id="vbl-${n}">—</span>
+    <button class="btn-wht" onclick="remVtr(${n})">Remover</button></div>
+  <div class="bbody">
+    <div class="g4" style="margin-bottom:13px">
+      <div class="f"><label>Prefixo VTR</label><input type="text" id="vp-${n}" placeholder="PM-00000" oninput="document.getElementById('vbl-${n}').textContent=this.value||'—'"></div>
+      <div class="f"><label>Horário</label><input type="time" id="vh-${n}"></div>
+      <div class="f"><label>SP / Km</label><input id="vk-${n}" placeholder="00000 km"></div>
+      <div class="f"><label>CPP</label><select id="vc-${n}"><option>Correto</option><option>Alterado</option><option>Não verificado</option></select></div>
+    </div>
+    <div class="g4" style="margin-bottom:13px">
+      <div class="f"><label>Odôm. inicial</label><input type="number" id="voi-${n}" placeholder="km"></div>
+      <div class="f"><label>Odôm. atual</label><input type="number" id="voa-${n}" placeholder="km"></div>
+      <div class="f"><label>Abastecimento</label><input id="vab-${n}" placeholder="Verificado / Pendente"></div>
+      <div class="f"><label>Limpeza</label><select id="vl-${n}"><option>Boa</option><option>Regular</option><option>Ruim</option></select></div>
+    </div>
+    <div class="stitle">Integrantes</div>
+    <p style="font-size:11px;color:var(--tx3);margin-bottom:9px">Adicione os integrantes e preencha os itens individualmente.</p>
+    <div id="mlist-${scope}"></div>
+    <div style="margin-top:5px">
+      <button class="btn-add" onclick="addMember('${scope}','enc',1,'vtr')">+ Encarregado (Subten/Sgt/Cb)</button>
+      <button class="btn-add" onclick="addMember('${scope}','mot',1,'vtr')">+ Motorista (Cb/Sd)</button>
+      <button class="btn-add" onclick="addMember('${scope}','aux',2,'vtr')">+ Auxiliar (Cb/Sd)</button>
+    </div>
+    <div class="sep"></div>
+    <div class="g2" style="margin-bottom:11px">
+      <div class="f"><label>AI-e / RV-e / AR-e</label><input id="vprod-${n}" placeholder="ex: AI-e:2 RV-e:1"></div>
+      <div class="f"><label>BO-e Nº</label><input id="vboe-${n}" placeholder="Nº"></div>
+    </div>
+    <div class="f"><label>Observações gerais</label>
+      <textarea id="vobs-${n}" style="width:100%;margin-top:4px;font-family:'Barlow',sans-serif;font-size:13px;padding:8px 10px;border:1px solid var(--bd);border-radius:var(--r);background:var(--s2);color:var(--tx);resize:vertical;min-height:44px" placeholder="Irregularidades gerais ou destaques..."></textarea>
+    </div>
+  </div>`;
+  c.appendChild(bl);vList.push(n);
+}
+function remVtr(n){document.getElementById(`vb-${n}`)?.remove();vList=vList.filter(x=>x!==n);}
+
+// ── COLETA ─────────────────────────────────────────
+const gv=id=>{const e=document.getElementById(id);return e?e.value||'':'';}
+
+function coletarIntegrantes(scope){
+  const c=document.getElementById(`mlist-${scope}`);if(!c)return[];
+  return [...c.querySelectorAll('.mwrap')].map(card=>{
+    const uid=card.id,parts=uid.split('_'),papel=parts[3];
+    const items=[...card.querySelectorAll('.ibtn')].map(b=>({item:b.textContent.trim(),estado:parseInt(b.dataset.s||0)}));
+    return{papel,nome:card.querySelector('.m-nome')?.value||'',re:card.querySelector('.m-re')?.value||'',
+      tipo_sang:card.querySelector('.m-tipo')?.value||'',arma_num:card.querySelector('.m-arma')?.value||'',
+      colete_num:card.querySelector('.m-colete')?.value||'',armamento:card.querySelector('.m-arm')?.value||'',
+      segunda_arma:card.querySelector('.m-2a')?.value||'',items,
+      observacoes:document.getElementById(`${uid}_obs`)?.value||''};
+  });
+}
+
+function coletarDados(status){
+  const relatorio={data_ronda:gv('data-r'),opm:gv('sel-opm'),pelotao:gv('sel-pel'),oficial:gv('sel-of'),
+    motorista_nome:gv('mot-nome'),motorista_re:gv('mot-re'),motorista_tipo_sang:gv('mot-tipo'),
+    h_inicio:gv('h-ini'),h_termino:gv('h-fim'),ppri:gv('ppri'),vtr_principal:gv('vtr-num'),
+    km_inicial:parseInt(gv('km-i'))||0,km_final:parseInt(gv('km-f'))||0,
+    dispensa:gv('dispensa'),obs_novidades:gv('obs-nov'),
+    email_cc:[gv('email-cc'),gv('email-cc2')].filter(Boolean).join(',')};
+  const bop_rondas=[...selBops].map(bop=>{
+    const bid=bop.replace('/','_'),scope=`bop_${bid}`;
+    const log_items=IT_LOG.map((it,i)=>({item:it,estado:parseInt(document.getElementById(`log-${bid}-${i}`)?.dataset.s||0)}));
+    return{bop,horario:gv(`bop-${bid}-hora`),sp_km:gv(`bop-${bid}-spkm`),log_items,
+      obs_logistica:gv(`log-${bid}-obs`),obs_geral:gv(`bop-${bid}-obs`),integrantes:coletarIntegrantes(scope)};
+  });
+  const viaturas=vList.map(n=>({prefixo:gv(`vp-${n}`),horario:gv(`vh-${n}`),sp_km:gv(`vk-${n}`),
+    cpp:gv(`vc-${n}`),odo_inicial:parseInt(gv(`voi-${n}`))||0,odo_atual:parseInt(gv(`voa-${n}`))||0,
+    abastecimento:gv(`vab-${n}`),limpeza:gv(`vl-${n}`),produtividade:gv(`vprod-${n}`),
+    boe_num:gv(`vboe-${n}`),obs_geral:gv(`vobs-${n}`),integrantes:coletarIntegrantes(`vtr_${n}`)}));
+  return{relatorio,bop_rondas,viaturas,status};
+}
+
+// ── SALVAR ─────────────────────────────────────────
+async function salvar(status){
+  const okEl=document.getElementById('alert-ok');
+  const errEl=document.getElementById('alert-err');
+  const warnEl=document.getElementById('alert-warn');
+  const btn=document.getElementById('btn-fin');
+  [okEl,errEl,warnEl].forEach(e=>e.style.display='none');
+
+  const dados=coletarDados(status);
+
+  // Salvar localmente na sessão
+  savedRels.unshift({...dados.relatorio,id:'local_'+Date.now(),status,
+    qtd_bops:dados.bop_rondas.length,qtd_vtrs:dados.viaturas.length});
+  renderSavedList();
+
+  if(status==='finalizado'){
+    btn.disabled=true;
+    btn.innerHTML='<span class="spinner"></span>Salvando no Firebase...';
+  }
+
+  try{
+    const id=await window.salvarFirestore(dados);
+    if(id){
+      okEl.textContent=`Relatório salvo no Firebase! ID: ${id}. Acesse "Consultar" para visualizar.`;
+      okEl.style.display='block';
+    } else {
+      warnEl.textContent='Firebase não configurado. Relatório salvo apenas localmente nesta sessão. Configure o Firebase na aba Configurações.';
+      warnEl.style.display='block';
+    }
+  } catch(err){
+    errEl.textContent=`Erro ao salvar: ${err.message}`;
+    errEl.style.display='block';
+  } finally{
+    btn.disabled=false;
+    btn.innerHTML='Finalizar · Salvar no Firebase';
+  }
+}
+
+// ── CONSULTA ───────────────────────────────────────
+async function buscar(){
+  const tbody=document.getElementById('ctbody');
+  const empty=document.getElementById('cempty');
+  const table=document.getElementById('ctable');
+  tbody.innerHTML='<tr><td colspan="9" style="padding:20px;text-align:center;color:var(--tx3)"><span class="spinner" style="border-top-color:var(--navy-mid)"></span>Buscando...</td></tr>';
+  empty.style.display='none';table.style.display='';
+
+  try{
+    const filtros={opm:gv('f-opm'),of:gv('f-of'),di:gv('f-di'),df:gv('f-df')};
+    let lista=await window.buscarFirestore(filtros);
+
+    if(lista===null){
+      // Firebase não configurado — usar dados locais
+      lista=savedRels.filter(r=>{
+        if(filtros.opm&&!r.opm?.toLowerCase().includes(filtros.opm.toLowerCase()))return false;
+        if(filtros.of&&!r.oficial?.toLowerCase().includes(filtros.of.toLowerCase()))return false;
+        if(filtros.di&&r.data_ronda<filtros.di)return false;
+        if(filtros.df&&r.data_ronda>filtros.df)return false;
+        return true;
+      });
+    }
+
+    if(!lista.length){tbody.innerHTML='';empty.style.display='block';table.style.display='none';return;}
+    empty.style.display='none';table.style.display='';
+    const fmt=d=>d?new Date(d+'T00:00:00').toLocaleDateString('pt-BR'):'—';
+    tbody.innerHTML=lista.map(r=>`<tr>
+      <td><strong>${fmt(r.data_ronda)}</strong></td>
+      <td>${r.opm||'—'}</td><td>${r.pelotao||'—'}</td><td>${r.oficial||'—'}</td>
+      <td>${r.h_inicio||'—'}</td>
+      <td>${r.qtd_bops||0}</td><td>${r.qtd_vtrs||0}</td>
+      <td><span class="badge ${r.status==='finalizado'?'bfin':'bdraf'}">${r.status==='finalizado'?'Finalizado':'Rascunho'}</span></td>
+      <td><button class="btn-del" onclick="excluir('${r.id}')">Excluir</button></td>
+    </tr>`).join('');
+  } catch(err){
+    tbody.innerHTML=`<tr><td colspan="9" style="padding:20px;text-align:center;color:var(--rnok)">Erro: ${err.message}</td></tr>`;
+  }
+}
+
+async function excluir(id){
+  if(!confirm('Confirma a exclusão?'))return;
+  try{
+    await window.excluirFirestore(id);
+    savedRels=savedRels.filter(r=>r.id!==id);
+    buscar();
+  } catch(err){alert('Erro ao excluir: '+err.message);}
+}
+
+function renderSavedList(){
+  const el=document.getElementById('saved-list');
+  if(!savedRels.length){el.textContent='Nenhum relatório salvo ainda.';return;}
+  el.innerHTML=savedRels.slice(0,6).map(r=>`
+    <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--bd2)">
+      <span style="font-size:12px;color:var(--tx2)">${r.data_ronda||'—'} · ${r.oficial||'—'} · ${r.opm||'—'}</span>
+      <span class="badge ${r.status==='finalizado'?'bfin':'bdraf'}">${r.status==='finalizado'?'Finalizado':'Rascunho'}</span>
+    </div>`).join('');
+}
+
+// ── INIT ────────────────────────────────────────────
+function init(){
+  fillSel('sel-opm',OPM,'Selecione...');
+  fillSel('sel-pel',PEL,'Selecione...');
+  fillSel('sel-of',OF,'Selecione...');
+  renderBopChips();
+  document.getElementById('data-r').value=new Date().toISOString().slice(0,10);
+}
+init();
+</script>
+</body>
+</html>
