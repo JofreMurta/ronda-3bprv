@@ -29,7 +29,7 @@ let fbOk = false;
 try {
   const app = initializeApp(firebaseConfig);
   db = getFirestore(app);
-  fbOk = firebaseConfig.apiKey !== 'AIzaSyCNrhC9tfS-qzEnj22mAA0VMULeP3abk70';
+  fbOk = true;
   if (fbOk) {
     document.getElementById('fb-status').textContent = '✓ Firebase conectado';
     document.getElementById('fb-status').style.color = '#3B6D11';
