@@ -457,13 +457,18 @@ function navPage(p){
   if(p==='consulta') buscar();
 }
 function showTab(t){
-  document.querySelectorAll('.tab-btn').forEach((b,i)=>b.classList.toggle('active',['dados','bop','viatura','config'][i]===t));
+  document.querySelectorAll('#page-form .tab-btn').forEach(b=>{
+    const fn=b.getAttribute('onclick')||'';
+    b.classList.toggle('active', fn.includes("'"+t+"'"));
+  });
   document.querySelectorAll('.tc').forEach(c=>c.classList.remove('active'));
   document.getElementById('tab-'+t).classList.add('active');
   if(t==='config'){
     const s=document.getElementById('fb-status');
-    document.getElementById('fb-status-cfg').textContent=s.textContent;
-    document.getElementById('fb-status-cfg').style.color=s.style.color;
+    if(s&&document.getElementById('fb-status-cfg')){
+      document.getElementById('fb-status-cfg').textContent=s.textContent;
+      document.getElementById('fb-status-cfg').style.color=s.style.color;
+    }
   }
 }
 
