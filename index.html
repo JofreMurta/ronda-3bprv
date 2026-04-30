@@ -8,7 +8,7 @@
 <!-- Firebase SDK -->
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getFirestore, collection, addDoc, getDocs, doc, deleteDoc, query, where, orderBy, serverTimestamp }
+import { getFirestore, collection, addDoc, getDocs, doc, deleteDoc, setDoc, getDoc, query, orderBy, serverTimestamp }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 // ── CONFIGURAÇÃO FIREBASE ─────────────────────────
@@ -117,6 +117,28 @@ window.buscarFirestore = async function(filtros) {
 window.excluirFirestore = async function(id) {
   if (!fbOk) return;
   await deleteDoc(doc(db, 'relatorios', id));
+};
+
+// ── SALVAR CONFIGURAÇÕES NO FIRESTORE ─────────────
+window.salvarConfigFirestore = async function(key, arr) {
+  if (!fbOk) return;
+  try {
+    await setDoc(doc(db, 'configuracoes', key), { itens: arr, updated_at: serverTimestamp() });
+  } catch(e) { console.warn('Erro ao salvar config:', e.message); }
+};
+
+// ── CARREGAR CONFIGURAÇÕES DO FIRESTORE ────────────
+window.carregarConfigFirestore = async function() {
+  if (!fbOk) return null;
+  try {
+    const keys = ['opm','pel','bop','of','cc'];
+    const result = {};
+    for (const key of keys) {
+      const snap = await getDoc(doc(db, 'configuracoes', key));
+      if (snap.exists()) result[key] = snap.data().itens;
+    }
+    return result;
+  } catch(e) { console.warn('Erro ao carregar config:', e.message); return null; }
 };
 </script>
 
@@ -436,15 +458,39 @@ body{font-family:'Barlow',sans-serif;font-size:14px;background:var(--s2);color:v
 
 <script>
 // ── DADOS ──────────────────────────────────────────
-// Listas editáveis — carregadas do localStorage se disponível
-function loadList(key, def){ try{ const v=localStorage.getItem('lista_'+key); return v?JSON.parse(v):def; }catch(e){return def;} }
-function saveList(key, arr){ try{ localStorage.setItem('lista_'+key, JSON.stringify(arr)); }catch(e){} }
+// Listas editáveis — valores padrão
+const DEFAULTS = {
+  bop: ['304/1','304/2','308/1','310/1','310/2','310/3','310/4','326/1','326/2','326/3','330/5','330/6','330/7','333/1','333/2','334/1','334/2','334/3'],
+  opm: ['3º BPRv','1ª Cia — Araraquara','2ª Cia — Rio Claro','3ª Cia — São José do Rio Preto','4ª Cia — Ribeirão Preto'],
+  pel: ['Sede','1º Pel','2º Pel','3º Pel'],
+  of:  ['1º Ten PM Marcelo Ferraz','1º Ten PM Gabriel','1º Ten PM Cutis','1º Ten PM Severo','1º Ten PM Jean','1º Ten PM Tavella','2º Ten PM Ferraz'],
+  cc:  ['3bprv1ciap3@policiamilitar.sp.gov.br','3bprv2ciap3@policiamilitar.sp.gov.br']
+};
 
-let BOPS = loadList('bop', ['304/1','304/2','308/1','310/1','310/2','310/3','310/4','326/1','326/2','326/3','330/5','330/6','330/7','333/1','333/2','334/1','334/2','334/3']);
-let OPM  = loadList('opm', ['3º BPRv','1ª Cia — Araraquara','2ª Cia — Rio Claro','3ª Cia — São José do Rio Preto','4ª Cia — Ribeirão Preto']);
-let PEL  = loadList('pel', ['Sede','1º Pel','2º Pel','3º Pel']);
-let OF   = loadList('of',  ['1º Ten PM Marcelo Ferraz','1º Ten PM Gabriel','1º Ten PM Cutis','1º Ten PM Severo','1º Ten PM Jean','1º Ten PM Tavella','2º Ten PM Ferraz']);
-let CC   = loadList('cc',  ['3bprv1ciap3@policiamilitar.sp.gov.br','3bprv2ciap3@policiamilitar.sp.gov.br']);
+let BOPS = [...DEFAULTS.bop];
+let OPM  = [...DEFAULTS.opm];
+let PEL  = [...DEFAULTS.pel];
+let OF   = [...DEFAULTS.of];
+let CC   = [...DEFAULTS.cc];
+
+// Salva no Firebase e atualiza a lista local
+async function saveList(key, arr) {
+  LISTA_MAP[key].setLocal(arr);
+  await window.salvarConfigFirestore(key, arr);
+}
+
+// Carrega configurações do Firebase ao iniciar
+async function carregarConfigs() {
+  const cfg = await window.carregarConfigFirestore();
+  if (!cfg) return;
+  if (cfg.opm)  { OPM  = cfg.opm;  }
+  if (cfg.pel)  { PEL  = cfg.pel;  }
+  if (cfg.bop)  { BOPS = cfg.bop;  }
+  if (cfg.of)   { OF   = cfg.of;   }
+  if (cfg.cc)   { CC   = cfg.cc;   }
+  refreshSelects();
+  renderAllLM();
+}
 const IT_T=['Apresentação pessoal e postura','Uniforme regulamentar e completo','Identidade funcional presente','CNH / documentação em ordem','Condições físicas e psíquicas aptas','Armamento de porte — número e condições','Colete balístico — número e condições','Telefone particular autorizado','Conferência com a escala de serviço','Atitude do policial em serviço','Operação de equipamentos verificada','Atendimento ao cidadão — qualidade'];
 const IT_ENC=['Preenchimento correto do controle (PPRI) e CPP','RSO Rv preenchido corretamente'];
 const IT_EB=['Livros e documentações da BOp preenchidos'];
@@ -805,11 +851,11 @@ function renderSavedList(){
 // ── INIT ────────────────────────────────────────────
 // ── GERENCIADOR DE LISTAS ─────────────────────────
 const LISTA_MAP = {
-  opm:  { arr: ()=>OPM,  set: v=>{ OPM=v; saveList('opm',v); } },
-  pel:  { arr: ()=>PEL,  set: v=>{ PEL=v; saveList('pel',v); } },
-  bop:  { arr: ()=>BOPS, set: v=>{ BOPS=v; saveList('bop',v); } },
-  of:   { arr: ()=>OF,   set: v=>{ OF=v;  saveList('of',v); } },
-  cc:   { arr: ()=>CC,   set: v=>{ CC=v;  saveList('cc',v); } },
+  opm:  { arr: ()=>OPM,  setLocal: v=>{ OPM=v;  }, set: async v=>{ OPM=v;  await saveList('opm',v); } },
+  pel:  { arr: ()=>PEL,  setLocal: v=>{ PEL=v;  }, set: async v=>{ PEL=v;  await saveList('pel',v); } },
+  bop:  { arr: ()=>BOPS, setLocal: v=>{ BOPS=v; }, set: async v=>{ BOPS=v; await saveList('bop',v); } },
+  of:   { arr: ()=>OF,   setLocal: v=>{ OF=v;   }, set: async v=>{ OF=v;   await saveList('of',v);  } },
+  cc:   { arr: ()=>CC,   setLocal: v=>{ CC=v;   }, set: async v=>{ CC=v;   await saveList('cc',v);  } },
 };
 
 function renderLM(key){
@@ -819,22 +865,25 @@ function renderLM(key){
   c.innerHTML=arr.map((it,i)=>`<div class="lm-item"><span>${it}</span><button class="btn-del" onclick="removeItem('${key}',${i})">Excluir</button></div>`).join('');
 }
 
-function addItem(key){
+async function addItem(key){
   const inp=document.getElementById('new-'+key);
   const v=(inp?.value||'').trim();if(!v){inp.focus();return;}
   const arr=LISTA_MAP[key].arr();
   if(arr.includes(v)){alert('Item já existe na lista.');return;}
-  LISTA_MAP[key].set([...arr,v]);
+  const btn=inp.nextElementSibling;
+  if(btn){btn.textContent='Salvando...';btn.disabled=true;}
+  await LISTA_MAP[key].set([...arr,v]);
   inp.value='';
+  if(btn){btn.textContent='Adicionar';btn.disabled=false;}
   renderLM(key);
   refreshSelects();
 }
 
-function removeItem(key,i){
+async function removeItem(key,i){
   const arr=LISTA_MAP[key].arr();
   if(!confirm('Excluir "'+arr[i]+'"?'))return;
-  arr.splice(i,1);
-  LISTA_MAP[key].set([...arr]);
+  const newArr=[...arr];newArr.splice(i,1);
+  await LISTA_MAP[key].set(newArr);
   renderLM(key);
   refreshSelects();
 }
@@ -858,10 +907,12 @@ function refreshSelects(){
   renderBopChips();
 }
 
-function init(){
+async function init(){
   refreshSelects();
   renderAllLM();
   document.getElementById('data-r').value=new Date().toISOString().slice(0,10);
+  // Carregar listas do Firebase (substituirá os padrões se existirem)
+  await carregarConfigs();
 }
 init();
 </script>
