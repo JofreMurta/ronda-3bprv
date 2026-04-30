@@ -58,32 +58,36 @@ window.salvarFirestore = async function(dados) {
 
     // 2. Salvar BOp rondadas
     for (const bop of dados.bop_rondas) {
+      const { integrantes: bopInts, ...bopData } = bop;
       const bopRef = await addDoc(collection(db, 'bop_rondas'), {
         relatorio_id: relId,
-        ...bop,
-        integrantes: undefined
+        ...bopData
       });
-      for (const int of (bop.integrantes || [])) {
+      for (const int of (bopInts || [])) {
+        const { items, ...intBase } = int;
         await addDoc(collection(db, 'bop_integrantes'), {
           bop_ronda_id: bopRef.id,
           relatorio_id: relId,
-          ...int
+          ...intBase,
+          items: (items || []).map(i => ({ item: i.item, estado: i.estado ?? 0 }))
         });
       }
     }
 
     // 3. Salvar viaturas
     for (const vtr of dados.viaturas) {
+      const { integrantes: vtrInts, ...vtrData } = vtr;
       const vtrRef = await addDoc(collection(db, 'viaturas'), {
         relatorio_id: relId,
-        ...vtr,
-        integrantes: undefined
+        ...vtrData
       });
-      for (const int of (vtr.integrantes || [])) {
+      for (const int of (vtrInts || [])) {
+        const { items, ...intBase } = int;
         await addDoc(collection(db, 'vtr_integrantes'), {
           viatura_id: vtrRef.id,
           relatorio_id: relId,
-          ...int
+          ...intBase,
+          items: (items || []).map(i => ({ item: i.item, estado: i.estado ?? 0 }))
         });
       }
     }
