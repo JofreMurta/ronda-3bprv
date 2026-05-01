@@ -708,13 +708,15 @@ async function carregarConfigs() {
 }
 // Itens pessoal/operações — BOp/Sede (sem itens de viatura)
 const IT_T_BOP=['Apresentação pessoal e postura','Uniforme regulamentar e completo','Identidade funcional presente','Condições físicas e psíquicas aptas','Armamento de porte — número e condições','Colete balístico — número e condições','Telefone particular autorizado','Conferência com a escala de serviço'];
-// Itens pessoal/operações — Viatura (lista completa)
-const IT_T=['Apresentação pessoal e postura','Uniforme regulamentar e completo','Identidade funcional presente','CNH / documentação em ordem','Condições físicas e psíquicas aptas','Armamento de porte — número e condições','Colete balístico — número e condições','Telefone particular autorizado','Conferência com a escala de serviço','Atitude do policial em serviço','Operação de equipamentos verificada','Atendimento ao cidadão — qualidade'];
+// Itens pessoal/operações — Enc VTR e Aux VTR (sem 4 itens)
+const IT_T=['Apresentação pessoal e postura','Uniforme regulamentar e completo','Identidade funcional presente','Condições físicas e psíquicas aptas','Armamento de porte — número e condições','Colete balístico — número e condições','Telefone particular autorizado','Conferência com a escala de serviço'];
+// Itens pessoal/operações — Motorista (mantém CNH)
+const IT_T_MOT=['Apresentação pessoal e postura','Uniforme regulamentar e completo','Identidade funcional presente','CNH / documentação em ordem','Condições físicas e psíquicas aptas','Armamento de porte — número e condições','Colete balístico — número e condições','Telefone particular autorizado','Conferência com a escala de serviço'];
 const IT_ENC=['Preenchimento correto do controle (PPRI) e CPP','RSO Rv preenchido corretamente'];
 const IT_EB=['Livros e documentações da BOp / Sede preenchidos'];
 const IT_EV=['Sinalização de obra na malha viária conferida'];
 const IT_VO=['CPP correto / alterações justificadas','Lançamentos no PPRI conferidos','Ação em desenvolvimento adequada','Odômetro inicial e atual registrados','Abastecimento verificado'];
-const IT_VC=['Limpeza interna e externa da viatura','Sistema de iluminação operacional','Equipamentos (radar, etilômetro, etc.)','Manutenção 1º escalão em dia','Documentação da viatura presente','Cartão de estacionamento presente'];
+const IT_VC=['Limpeza interna e externa da viatura','Sistema de iluminação operacional','Equipamentos (radar, etilômetro, etc.)','Manutenção 1º escalão em dia','Documentação da viatura presente','Abastecimento da viatura'];
 const IT_LOG=['Limpeza e conservação das dependências','Iluminação interna e externa','Acesso ao público externo','Controle de estacionamento / cartão','Armamento e materiais bélicos verificados','Equipamentos de telemática e rádio'];
 
 let selBops=new Set(), mCtrl={}, vCount=0, vList=[], savedRels=[], rascunhoOrigemId=null, rascunhoAtualId=null;
@@ -820,17 +822,21 @@ function mkBtns(uid,itens,pfx){
   return `<div class="igrid">${itens.map((it,i)=>`<button type="button" class="ibtn" data-s="0" id="${uid}_${pfx}${i}" onclick="cycleItem(this)"><span class="idot"></span>${it}</button>`).join('')}</div>`;
 }
 function buildSecs(uid,papel,ctx){
-  const itensBase = ctx==='bop' ? IT_T_BOP : IT_T;
+  // Selecionar lista de itens pessoal conforme papel e contexto
+  let itensBase;
+  if(ctx==='bop') itensBase = IT_T_BOP;
+  else if(ctx==='vtr' && papel==='mot') itensBase = IT_T_MOT;
+  else itensBase = IT_T; // enc_vtr e aux_vtr
+
   let h=`<div class="isub">Pessoal e operações</div>${mkBtns(uid,itensBase,'t')}`;
+
   if(papel==='enc'){
     h+=`<div class="isub" style="margin-top:9px">Documentação — encarregado</div>${mkBtns(uid,IT_ENC,'e')}`;
-    if(ctx==='bop')h+=`<div class="isub" style="margin-top:9px">Livros — BOp / Sede</div>${mkBtns(uid,IT_EB,'lb')}`;
-    if(ctx==='vtr')h+=`<div class="isub" style="margin-top:9px">Sinalização viária</div>${mkBtns(uid,IT_EV,'sv')}`;
+    if(ctx==='bop') h+=`<div class="isub" style="margin-top:9px">Livros — BOp / Sede</div>${mkBtns(uid,IT_EB,'lb')}`;
+    // Enc VTR: sem sinalização viária, sem operacional, apenas conservação
+    if(ctx==='vtr') h+=`<div class="isub" style="margin-top:9px">Conservação da viatura</div>${mkBtns(uid,IT_VC,'vc')}`;
   }
-  if(ctx==='vtr'){
-    h+=`<div class="isub" style="margin-top:9px">Operacional da viatura</div>${mkBtns(uid,IT_VO,'vo')}`;
-    h+=`<div class="isub" style="margin-top:9px">Conservação da viatura</div>${mkBtns(uid,IT_VC,'vc')}`;
-  }
+  // Motorista e Auxiliar VTR: sem operacional e sem conservação
   return h;
 }
 function memberHtml(uid,gradLabel,gradPh,mhCls,mlCls,lbl,papel,ctx){
@@ -959,9 +965,20 @@ function addVtr(){
       <button class="btn-add" onclick="addMember('${scope}','aux',2,'vtr')">+ Auxiliar (Cb/Sd)</button>
     </div>
     <div class="sep"></div>
-    <div class="g2" style="margin-bottom:11px">
-      <div class="f"><label>AI-e / RV-e / AR-e</label><input id="vprod-${n}" placeholder="ex: AI-e:2 RV-e:1"></div>
-      <div class="f"><label>BO-e Nº</label><input id="vboe-${n}" placeholder="Nº"></div>
+    <div class="stitle">Produtividade operacional</div>
+    <div class="g3" style="margin-bottom:10px">
+      <div class="f"><label>Veículos fiscalizados</label><input type="number" id="vfis-${n}" placeholder="0" min="0"></div>
+      <div class="f"><label>AI à revelia</label><input type="number" id="vair-${n}" placeholder="0" min="0"></div>
+      <div class="f"><label>AI com abordagem</label><input type="number" id="vaia-${n}" placeholder="0" min="0"></div>
+    </div>
+    <div class="g3" style="margin-bottom:10px">
+      <div class="f"><label>Veículos recolhidos</label><input type="number" id="vvr-${n}" placeholder="0" min="0"></div>
+      <div class="f"><label>Documentos recolhidos</label><input type="number" id="vdr-${n}" placeholder="0" min="0"></div>
+      <div class="f"><label>BOPM atendido</label><input type="number" id="vbopm-${n}" placeholder="0" min="0"></div>
+    </div>
+    <div class="g2" style="margin-bottom:10px">
+      <div class="f"><label>Testes de etilômetro passivo</label><input type="number" id="veti-${n}" placeholder="0" min="0"></div>
+      <div class="f"><label>BO-e Nº</label><input id="vboe-${n}" placeholder="Nº do BO"></div>
     </div>
     <div class="f"><label>Observações gerais</label>
       <textarea id="vobs-${n}" style="width:100%;margin-top:4px;font-family:'Barlow',sans-serif;font-size:13px;padding:8px 10px;border:1px solid var(--bd);border-radius:var(--r);background:var(--s2);color:var(--tx);resize:vertical;min-height:44px" placeholder="Irregularidades gerais ou destaques..."></textarea>
@@ -1000,8 +1017,11 @@ function coletarDados(status){
   });
   const viaturas=vList.map(n=>({prefixo:gv(`vp-${n}`),horario:gv(`vh-${n}`),sp_km:gv(`vk-${n}`),
     cpp:gv(`vc-${n}`),odo_inicial:parseInt(gv(`voi-${n}`))||0,odo_atual:parseInt(gv(`voa-${n}`))||0,
-    abastecimento:gv(`vab-${n}`),limpeza:gv(`vl-${n}`),produtividade:gv(`vprod-${n}`),
-    boe_num:gv(`vboe-${n}`),obs_geral:gv(`vobs-${n}`),integrantes:coletarIntegrantes(`vtr_${n}`)}));
+    abastecimento:gv(`vab-${n}`),limpeza:gv(`vl-${n}`),
+    vtr_fiscalizados:gv(`vfis-${n}`),ai_revelia:gv(`vair-${n}`),ai_abordagem:gv(`vaia-${n}`),
+    vtr_recolhidos:gv(`vvr-${n}`),doc_recolhidos:gv(`vdr-${n}`),bopm_atendido:gv(`vbopm-${n}`),
+    etilometro:gv(`veti-${n}`),boe_num:gv(`vboe-${n}`),
+    obs_geral:gv(`vobs-${n}`),integrantes:coletarIntegrantes(`vtr_${n}`)}));
   return{relatorio,bop_rondas,viaturas,status};
 }
 
@@ -1245,7 +1265,21 @@ function buildPDFHtml(rel){
         const idx = m.papel==='aux' ? ++auxN : 0;
         body+=renderMembro(m, idx);
       });
-      if(vtr.produtividade||vtr.boe_num) body+='<div style="font-size:9pt;margin-top:4px"><b>Produtividade:</b> '+(vtr.produtividade||'—')+' &nbsp;·&nbsp; <b>BO-e Nº:</b> '+(vtr.boe_num||'—')+'</div>';
+      // Produtividade operacional
+      const temProd = vtr.vtr_fiscalizados||vtr.ai_revelia||vtr.ai_abordagem||vtr.vtr_recolhidos||vtr.doc_recolhidos||vtr.bopm_atendido||vtr.etilometro||vtr.boe_num;
+      if(temProd){
+        body+='<div style="font-size:9pt;margin-top:6px;background:#f5f6fa;border-radius:4px;padding:7px 10px">'
+          +'<b>Produtividade operacional:</b><br>'
+          +'<span>Veículos fiscalizados: <b>'+(vtr.vtr_fiscalizados||'0')+'</b></span> &nbsp;·&nbsp; '
+          +'<span>AI à revelia: <b>'+(vtr.ai_revelia||'0')+'</b></span> &nbsp;·&nbsp; '
+          +'<span>AI com abordagem: <b>'+(vtr.ai_abordagem||'0')+'</b></span><br>'
+          +'<span>Veículos recolhidos: <b>'+(vtr.vtr_recolhidos||'0')+'</b></span> &nbsp;·&nbsp; '
+          +'<span>Documentos recolhidos: <b>'+(vtr.doc_recolhidos||'0')+'</b></span> &nbsp;·&nbsp; '
+          +'<span>BOPM atendido: <b>'+(vtr.bopm_atendido||'0')+'</b></span><br>'
+          +'<span>Etilômetro passivo: <b>'+(vtr.etilometro||'0')+'</b></span>'
+          +(vtr.boe_num?' &nbsp;·&nbsp; <span>BO-e Nº: <b>'+vtr.boe_num+'</b></span>':'')
+          +'</div>';
+      }
       if(vtr.obs_geral) body+='<div class="obs" style="margin-top:4px"><b>Obs. geral:</b> '+vtr.obs_geral+'</div>';
       body += '</div></div>';
     });
@@ -1347,7 +1381,10 @@ async function reabrirRascunho(id){
       set(`vp-${n}`,vtr.prefixo); set(`vh-${n}`,vtr.horario); set(`vk-${n}`,vtr.sp_km);
       set(`vc-${n}`,vtr.cpp); set(`voi-${n}`,vtr.odo_inicial); set(`voa-${n}`,vtr.odo_atual);
       set(`vab-${n}`,vtr.abastecimento); set(`vl-${n}`,vtr.limpeza);
-      set(`vprod-${n}`,vtr.produtividade); set(`vboe-${n}`,vtr.boe_num);
+      set(`vfis-${n}`,vtr.vtr_fiscalizados); set(`vair-${n}`,vtr.ai_revelia);
+      set(`vaia-${n}`,vtr.ai_abordagem); set(`vvr-${n}`,vtr.vtr_recolhidos);
+      set(`vdr-${n}`,vtr.doc_recolhidos); set(`vbopm-${n}`,vtr.bopm_atendido);
+      set(`veti-${n}`,vtr.etilometro); set(`vboe-${n}`,vtr.boe_num);
       set(`vobs-${n}`,vtr.obs_geral);
       const vbl=document.getElementById(`vbl-${n}`);
       if(vbl) vbl.textContent=vtr.prefixo||'—';
