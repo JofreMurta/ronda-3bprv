@@ -731,10 +731,50 @@ const IT_LOG=['Limpeza e conservação das dependências','Limpeza e conservaç�
 let selBops=new Set(), mCtrl={}, vCount=0, vList=[], savedRels=[], rascunhoOrigemId=null, rascunhoAtualId=null;
 
 // ── NAV ────────────────────────────────────────────
+function limparFormulario(){
+  // Dados gerais
+  const campos=['data-r','sel-opm','sel-pel','sel-of','mot-nome','mot-re','mot-tipo',
+    'h-ini','h-fim','ppri','vtr-num','km-i','km-f','obs-nov'];
+  campos.forEach(id=>{
+    const el=document.getElementById(id);
+    if(!el) return;
+    if(id==='h-ini') el.value='23:59';
+    else if(id==='data-r') el.value=new Date().toISOString().slice(0,10);
+    else if(el.tagName==='SELECT') el.selectedIndex=0;
+    else el.value='';
+  });
+  // Alertas
+  ['alert-ok','alert-err','alert-warn'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.style.display='none';
+  });
+  // BOp
+  selBops.clear();
+  mCtrl={};
+  renderBopChips();
+  const bopBlocks=document.getElementById('bop-blocks');
+  if(bopBlocks) bopBlocks.innerHTML='<div class="sec"><p style="color:var(--tx3);font-size:13px;text-align:center;padding:14px 0">Selecione uma ou mais BOp acima para gerar os blocos de registro.</p></div>';
+  // Viaturas
+  vCount=0; vList=[];
+  const vtrBlocks=document.getElementById('vtr-blocks');
+  if(vtrBlocks) vtrBlocks.innerHTML='';
+  // Estado de rascunho
+  rascunhoAtualId=null;
+  rascunhoOrigemId=null;
+  // Voltar para aba Dados da ronda
+  showTab('dados');
+}
+
 function navPage(p){
-  if(p==='form' && rascunhoAtualId && !rascunhoOrigemId){
-    if(!confirm('Há um rascunho em andamento. Iniciar nova ronda irá descartar o rascunho não salvo da sessão. Continuar?'))return;
-    rascunhoAtualId=null;
+  if(p==='form'){
+    const temRascunho = rascunhoAtualId && !rascunhoOrigemId;
+    const temConteudo = selBops.size > 0 || vList.length > 0 ||
+      document.getElementById('sel-of')?.value ||
+      document.getElementById('sel-opm')?.value;
+    if((temRascunho || temConteudo) && document.getElementById('page-form').classList.contains('active')){
+      if(!confirm('Limpar o formulário e iniciar nova ronda?')) return;
+    }
+    limparFormulario();
   }
   ['form','consulta'].forEach(x=>{
     document.getElementById('page-'+x).classList.toggle('active',x===p);
