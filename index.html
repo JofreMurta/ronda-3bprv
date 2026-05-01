@@ -250,8 +250,10 @@ body{font-family:'Barlow',sans-serif;font-size:14px;background:var(--s2);color:v
 
 /* PDF PRINT */
 .pdf-area { display:none; }
+body.imprimindo > *:not(.pdf-area) { display:none !important; }
+body.imprimindo .pdf-area { display:block !important; }
 @media print {
-  body > * { display:none !important; }
+  body > *:not(.pdf-area) { display:none !important; }
   .pdf-area { display:block !important; font-family:Arial,sans-serif; font-size:9.5pt; color:#000; }
   .pdf-header { background:#1a3a5c !important; color:#fff !important; padding:12px 16px; border-radius:6px 6px 0 0; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
   .pdf-header h2 { font-size:14pt; font-weight:bold; margin:0 0 3px; }
@@ -1117,7 +1119,15 @@ async function gerarPDF(id){
     hideModal();
     const area = document.getElementById('pdf-area');
     area.innerHTML = buildPDFHtml(rel);
-    setTimeout(()=>{ window.print(); }, 300);
+    area.style.display = 'block';
+    document.body.classList.add('imprimindo');
+    setTimeout(()=>{
+      window.print();
+      setTimeout(()=>{
+        area.style.display = 'none';
+        document.body.classList.remove('imprimindo');
+      }, 1000);
+    }, 500);
   } catch(e){ hideModal(); alert('Erro ao gerar PDF: '+e.message); }
 }
 
