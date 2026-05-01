@@ -844,15 +844,13 @@ function memberHtml(uid,gradLabel,gradPh,mhCls,mlCls,lbl,papel,ctx){
     <div class="mhdr ${mhCls}"><span class="mlbl ${mlCls}">${lbl}</span><button class="btn-del" onclick="remMember('${uid}')">Remover</button></div>
     <div class="mbody">
       <div class="idstrip">
-        <div class="g${ctx==='bop'?3:4}">
+        <div class="g3">
           <div class="f sp2"><label>${gradLabel}</label><input type="text" class="m-nome" placeholder="${gradPh}"></div>
           <div class="f"><label>RE</label><input type="text" class="m-re" placeholder="RE 000000"></div>
-          ${ctx==='vtr'?'<div class="f"><label>Tipo sanguíneo</label><input type="text" class="m-tipo" placeholder="O+"></div>':''}
         </div>
-        <div class="${ctx==='bop'?'g2':'g4'}" style="margin-top:9px">
+        <div class="g2" style="margin-top:9px">
           <div class="f"><label>Arma Nº</label><input type="text" class="m-arma"></div>
           <div class="f"><label>Colete Nº</label><input type="text" class="m-colete"></div>
-          ${ctx==='vtr'?'<div class="f"><label>Armamento</label><select class="m-arm"><option>Da corporação</option><option>Particular</option></select></div><div class="f"><label>2ª arma?</label><select class="m-2a"><option value="nao">Não</option><option value="sim">Sim</option></select></div>':''}
         </div>
       </div>
       ${legendHtml()}${buildSecs(uid,papel,ctx)}
