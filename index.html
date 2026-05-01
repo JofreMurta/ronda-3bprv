@@ -324,7 +324,7 @@ body.imprimindo .pdf-area { display:block !important; }
       <div class="stitle">Dados da escala</div>
       <div class="g3">
         <div class="f"><label>Data</label><input type="date" id="data-r"></div>
-        <div class="f"><label>Hora início</label><input type="time" id="h-ini" value="23:59"></div>
+        <div class="f"><label>Hora início</label><input type="time" id="h-ini"></div>
         <div class="f"><label>Hora término</label><input type="time" id="h-fim"></div>
       </div>
     </div>
@@ -723,9 +723,7 @@ function limparFormulario(){
   campos.forEach(id=>{
     const el=document.getElementById(id);
     if(!el) return;
-    if(id==='h-ini') el.value='23:59';
-    else if(id==='data-r') el.value=new Date().toISOString().slice(0,10);
-    else if(el.tagName==='SELECT') el.selectedIndex=0;
+    if(el.tagName==='SELECT') el.selectedIndex=0;
     else el.value='';
   });
   // Alertas
@@ -1462,7 +1460,6 @@ function refreshSelects(){
 async function init(){
   refreshSelects();
   renderAllLM();
-  document.getElementById('data-r').value=new Date().toISOString().slice(0,10);
   // Carregar listas do Firebase
   await carregarConfigs();
 
