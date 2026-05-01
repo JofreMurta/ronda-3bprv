@@ -26,20 +26,29 @@ const firebaseConfig = {
 let db = null;
 let fbOk = false;
 
+function atualizarStatusFb(texto, cor) {
+  // Aguarda o DOM estar pronto antes de atualizar
+  const atualizar = () => {
+    ['fb-status','fb-status-cfg'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) { el.textContent = texto; el.style.color = cor; }
+    });
+  };
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', atualizar);
+  } else {
+    atualizar();
+  }
+}
+
 try {
   const app = initializeApp(firebaseConfig);
   db = getFirestore(app);
   fbOk = true;
-  if (fbOk) {
-    document.getElementById('fb-status').textContent = '✓ Firebase conectado';
-    document.getElementById('fb-status').style.color = '#3B6D11';
-  } else {
-    document.getElementById('fb-status').textContent = '⚠ Configure o Firebase na aba Configurações';
-    document.getElementById('fb-status').style.color = '#854F0B';
-  }
+  atualizarStatusFb('✓ Firebase conectado', '#3B6D11');
 } catch(e) {
-  document.getElementById('fb-status').textContent = '✗ Erro Firebase: ' + e.message;
-  document.getElementById('fb-status').style.color = '#A32D2D';
+  fbOk = false;
+  atualizarStatusFb('✗ Erro: ' + e.message, '#A32D2D');
 }
 
 // ── SALVAR NO FIRESTORE ───────────────────────────
@@ -386,9 +395,16 @@ body{font-family:'Barlow',sans-serif;font-size:14px;background:var(--s2);color:v
 
 /* CONFIG CARD */
 .lm-box{border:1px solid var(--bd);border-radius:var(--r);overflow:hidden;margin-bottom:8px}
-.lm-item{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid var(--bd2);font-size:13px;color:var(--tx)}
+.lm-item{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--bd2);font-size:13px;color:var(--tx)}
 .lm-item:last-child{border-bottom:none}
 .lm-item:hover{background:var(--s2)}
+.lm-item.inativo{background:#f9f9f9}
+.lm-item.inativo .lm-nome{text-decoration:line-through;color:var(--tx3)}
+.lm-nome{flex:1}
+.lm-badge-ativo{font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:var(--gok-bg);color:var(--gok);flex-shrink:0}
+.lm-badge-inativo{font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:var(--s3);color:var(--tx3);flex-shrink:0}
+.btn-inativar{font-size:11px;font-weight:600;padding:3px 8px;border-radius:var(--r);cursor:pointer;font-family:'Barlow',sans-serif;background:var(--amber-bg);color:var(--amber);border:1px solid #ffcc02;flex-shrink:0}
+.btn-ativar{font-size:11px;font-weight:600;padding:3px 8px;border-radius:var(--r);cursor:pointer;font-family:'Barlow',sans-serif;background:var(--gok-bg);color:var(--gok);border:1px solid #8dc63f;flex-shrink:0}
 .lm-add-row{display:flex;gap:8px;margin-top:4px}
 .lm-add-row input{flex:1;font-family:'Barlow',sans-serif;font-size:13px;padding:7px 10px;border:1px solid var(--bd);border-radius:var(--r);background:var(--s2);color:var(--tx)}
 .lm-empty{padding:12px;font-size:12px;color:var(--tx3);text-align:center}
@@ -506,14 +522,7 @@ body{font-family:'Barlow',sans-serif;font-size:14px;background:var(--s2);color:v
       <div class="f"><textarea id="obs-nov" placeholder="Registrar tudo que não conste nos demais campos..."></textarea></div>
     </div>
     <div class="sec">
-      <div class="stitle">Encaminhar relatório</div>
-      <div class="g3" style="margin-bottom:13px">
-        <div class="f"><label>Destinatário P/3</label><input value="3bprvp3@policiamilitar.sp.gov.br" readonly></div>
-        <div class="f"><label>Cmt de Cia (cópia)</label>
-          <select id="email-cc"></select>
-        </div>
-        <div class="f"><label>CC adicional</label><input type="email" id="email-cc2" placeholder="outro e-mail..."></div>
-      </div>
+      <div class="stitle">Salvar relatório</div>
       <div class="g2">
         <button class="btn-sec" onclick="salvar('rascunho')">Salvar rascunho</button>
         <button class="btn-pri" id="btn-fin" onclick="salvar('finalizado')">Finalizar · Salvar no Firebase</button>
@@ -549,8 +558,11 @@ body{font-family:'Barlow',sans-serif;font-size:14px;background:var(--s2);color:v
   <!-- CONFIGURAÇÕES -->
   <div id="tab-config" class="tc">
     <div class="sec">
-      <div class="stitle">Status da conexão</div>
-      <div style="font-size:13px;margin-bottom:16px">Firebase: <span id="fb-status-cfg" style="font-weight:600">verificando...</span></div>
+      <div class="stitle">Status da conexão Firebase</div>
+      <div style="font-size:13px;margin-bottom:4px">
+        <span id="fb-status-cfg" style="font-weight:600">verificando...</span>
+      </div>
+      <div style="font-size:11px;color:var(--tx3)">Projeto: passagemserv3bprv · southamerica-east1</div>
     </div>
     <div class="sec"><div class="stitle">OPM</div><div id="lm-opm" class="lm-box"></div>
       <div class="lm-add-row"><input type="text" id="new-opm" placeholder="Nova OPM..."><button class="btn-add" onclick="addItem('opm')">Adicionar</button></div></div>
@@ -560,8 +572,7 @@ body{font-family:'Barlow',sans-serif;font-size:14px;background:var(--s2);color:v
       <div class="lm-add-row"><input type="text" id="new-bop" placeholder="Nova BOp (ex: 335/1)..."><button class="btn-add" onclick="addItem('bop')">Adicionar</button></div></div>
     <div class="sec"><div class="stitle">Oficiais responsáveis</div><div id="lm-of" class="lm-box"></div>
       <div class="lm-add-row"><input type="text" id="new-of" placeholder="Ex: 1º Ten PM Silva..."><button class="btn-add" onclick="addItem('of')">Adicionar</button></div></div>
-    <div class="sec"><div class="stitle">E-mails — Cmt de Cia (cópia)</div><div id="lm-cc" class="lm-box"></div>
-      <div class="lm-add-row"><input type="email" id="new-cc" placeholder="email@policiamilitar.sp.gov.br..."><button class="btn-add" onclick="addItem('cc')">Adicionar</button></div></div>
+
     <div class="sec"><div class="stitle">Relatórios salvos localmente (sessão)</div>
       <div id="saved-list" style="font-size:12px;color:var(--tx3)">Nenhum relatório ainda.</div></div>
   </div>
@@ -634,11 +645,11 @@ async function carregarConfigs() {
 
   // Sem Firebase — usar padrões locais temporariamente
   if (!cfg) {
-    BOPS = [...FABRICA.bop];
-    OPM  = [...FABRICA.opm];
-    PEL  = [...FABRICA.pel];
-    OF   = [...FABRICA.of];
-    CC   = [...FABRICA.cc];
+    BOPS = FABRICA.bop.map(v=>({valor:v,ativo:true}));
+    OPM  = FABRICA.opm.map(v=>({valor:v,ativo:true}));
+    PEL  = FABRICA.pel.map(v=>({valor:v,ativo:true}));
+    OF   = FABRICA.of.map(v=>({valor:v,ativo:true}));
+    CC   = FABRICA.cc.map(v=>({valor:v,ativo:true}));
     refreshSelects();
     renderAllLM();
     return;
@@ -648,10 +659,12 @@ async function carregarConfigs() {
   const keys = ['opm','pel','bop','of','cc'];
   for (const key of keys) {
     if (cfg[key] && cfg[key].length > 0) {
-      LISTA_MAP[key].setLocal(cfg[key]);
+      // Normalizar: converter strings simples para {valor, ativo:true}
+      const normalizado = cfg[key].map(it => typeof it==='string' ? {valor:it,ativo:true} : it);
+      LISTA_MAP[key].setLocal(normalizado);
     } else {
-      // Primeira execução: gravar padrões no Firebase
-      const fab = FABRICA[key];
+      // Primeira execução: gravar padrões de fábrica como objetos {valor, ativo}
+      const fab = FABRICA[key].map(v => ({valor:v, ativo:true}));
       LISTA_MAP[key].setLocal(fab);
       await window.salvarConfigFirestore(key, fab);
     }
@@ -690,11 +703,6 @@ function showTab(t){
   document.querySelectorAll('.tc').forEach(c=>c.classList.remove('active'));
   document.getElementById('tab-'+t).classList.add('active');
   if(t==='config'){
-    const s=document.getElementById('fb-status');
-    if(s&&document.getElementById('fb-status-cfg')){
-      document.getElementById('fb-status-cfg').textContent=s.textContent;
-      document.getElementById('fb-status-cfg').style.color=s.style.color;
-    }
     renderAllLM();
   }
 }
@@ -710,7 +718,8 @@ function fillSel(id,arr,ph){
 // ── BOp CHIPS ──────────────────────────────────────
 function renderBopChips(){
   const c=document.getElementById('bop-chips');c.innerHTML='';
-  BOPS.forEach(b=>{
+  const bopsAtivas = itensAtivos(BOPS);
+  bopsAtivas.forEach(b=>{
     const btn=document.createElement('button');
     btn.className='bchip'+(selBops.has(b)?' sel':'');btn.textContent=b;
     btn.onclick=()=>{selBops.has(b)?selBops.delete(b):selBops.add(b);btn.classList.toggle('sel');renderBopBlocks();updBopCnt();};
@@ -911,7 +920,7 @@ function coletarDados(status){
     h_inicio:gv('h-ini'),h_termino:gv('h-fim'),ppri:gv('ppri'),vtr_principal:gv('vtr-num'),
     km_inicial:parseInt(gv('km-i'))||0,km_final:parseInt(gv('km-f'))||0,
     dispensa:gv('dispensa'),obs_novidades:gv('obs-nov'),
-    email_cc:[gv('email-cc'),gv('email-cc2')].filter(Boolean).join(',')};
+    email_cc:''};
   const bop_rondas=[...selBops].map(bop=>{
     const bid=bop.replace('/','_'),scope=`bop_${bid}`;
     const log_items=IT_LOG.map((it,i)=>({item:it,estado:parseInt(document.getElementById(`log-${bid}-${i}`)?.dataset.s||0)}));
@@ -1166,7 +1175,7 @@ async function reabrirRascunho(id){
       'mot-tipo': rel.motorista_tipo_sang, 'h-ini': rel.h_inicio, 'h-fim': rel.h_termino,
       'ppri': rel.ppri, 'vtr-num': rel.vtr_principal, 'km-i': rel.km_inicial,
       'km-f': rel.km_final, 'dispensa': rel.dispensa, 'obs-nov': rel.obs_novidades,
-      'email-cc': rel.email_cc
+      // email removido
     };
     Object.entries(campos).forEach(([id, val]) => {
       const el = document.getElementById(id);
@@ -1287,6 +1296,11 @@ function renderSavedList(){
 
 // ── INIT ────────────────────────────────────────────
 // ── GERENCIADOR DE LISTAS ─────────────────────────
+// Cada item da lista: { valor: string, ativo: boolean }
+// Compatibilidade: se item for string simples, converte para objeto
+function normalizarItem(it){ return (typeof it==='string') ? {valor:it,ativo:true} : it; }
+function itensAtivos(arr){ return arr.map(normalizarItem).filter(i=>i.ativo).map(i=>i.valor); }
+
 const LISTA_MAP = {
   opm:  { arr: ()=>OPM,  setLocal: v=>{ OPM=v;  }, set: async v=>{ OPM=v;  await saveList('opm',v); } },
   pel:  { arr: ()=>PEL,  setLocal: v=>{ PEL=v;  }, set: async v=>{ PEL=v;  await saveList('pel',v); } },
@@ -1299,28 +1313,34 @@ function renderLM(key){
   const c=document.getElementById('lm-'+key);if(!c)return;
   const arr=LISTA_MAP[key].arr();
   if(!arr.length){c.innerHTML='<div class="lm-empty">Nenhum item cadastrado.</div>';return;}
-  c.innerHTML=arr.map((it,i)=>`<div class="lm-item"><span>${it}</span><button class="btn-del" onclick="removeItem('${key}',${i})">Excluir</button></div>`).join('');
+  c.innerHTML=arr.map(normalizarItem).map((it,i)=>{
+    const cls=it.ativo?'lm-item':'lm-item inativo';
+    const badge=it.ativo?'<span class="lm-badge-ativo">Ativo</span>':'<span class="lm-badge-inativo">Inativo</span>';
+    const btn=it.ativo
+      ? `<button class="btn-inativar" onclick="toggleItem('${key}',${i},false)">Inativar</button>`
+      : `<button class="btn-ativar"   onclick="toggleItem('${key}',${i},true)">Reativar</button>`;
+    return `<div class="${cls}"><span class="lm-nome">${it.valor}</span>${badge}${btn}</div>`;
+  }).join('');
 }
 
 async function addItem(key){
   const inp=document.getElementById('new-'+key);
   const v=(inp?.value||'').trim();if(!v){inp.focus();return;}
-  const arr=LISTA_MAP[key].arr();
-  if(arr.includes(v)){alert('Item já existe na lista.');return;}
+  const arr=LISTA_MAP[key].arr().map(normalizarItem);
+  if(arr.some(i=>i.valor===v)){alert('Item já existe na lista.');return;}
   const btn=inp.nextElementSibling;
   if(btn){btn.textContent='Salvando...';btn.disabled=true;}
-  await LISTA_MAP[key].set([...arr,v]);
+  await LISTA_MAP[key].set([...arr,{valor:v,ativo:true}]);
   inp.value='';
   if(btn){btn.textContent='Adicionar';btn.disabled=false;}
   renderLM(key);
   refreshSelects();
 }
 
-async function removeItem(key,i){
-  const arr=LISTA_MAP[key].arr();
-  if(!confirm('Excluir "'+arr[i]+'"?'))return;
-  const newArr=[...arr];newArr.splice(i,1);
-  await LISTA_MAP[key].set(newArr);
+async function toggleItem(key,i,ativo){
+  const arr=LISTA_MAP[key].arr().map(normalizarItem);
+  arr[i]={...arr[i],ativo};
+  await LISTA_MAP[key].set(arr);
   renderLM(key);
   refreshSelects();
 }
@@ -1330,17 +1350,9 @@ function renderAllLM(){
 }
 
 function refreshSelects(){
-  fillSel('sel-opm',OPM,'Selecione...');
-  fillSel('sel-pel',PEL,'Selecione...');
-  fillSel('sel-of',OF,'Selecione...');
-  // CC select
-  const cc=document.getElementById('email-cc');
-  if(cc){
-    const v=cc.value;
-    cc.innerHTML='<option value="">Selecione a Cia...</option>';
-    CC.forEach(e=>{const o=document.createElement('option');o.value=e;o.textContent=e;cc.appendChild(o);});
-    if(CC.includes(v))cc.value=v;
-  }
+  fillSel('sel-opm', itensAtivos(OPM),  'Selecione...');
+  fillSel('sel-pel', itensAtivos(PEL),  'Selecione...');
+  fillSel('sel-of',  itensAtivos(OF),   'Selecione...');
   renderBopChips();
 }
 
