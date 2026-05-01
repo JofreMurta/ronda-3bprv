@@ -8,7 +8,7 @@
 <!-- Firebase SDK -->
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getFirestore, collection, addDoc, getDocs, doc, deleteDoc, setDoc, getDoc, query, orderBy, serverTimestamp }
+import { getFirestore, collection, addDoc, getDocs, doc, deleteDoc, setDoc, getDoc, updateDoc, query, where, orderBy, serverTimestamp }
   from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 // ── CONFIGURAÇÃO FIREBASE ─────────────────────────
@@ -98,6 +98,66 @@ window.salvarFirestore = async function(dados) {
   }
 };
 
+// ── ATUALIZAR RASCUNHO NO FIRESTORE ──────────────
+window.atualizarRascunho = async function(id, dados) {
+  if (!fbOk) return false;
+  try {
+    // Atualizar relatório principal
+    const { integrantes: _i, ...relData } = dados.relatorio;
+    await updateDoc(doc(db, 'relatorios', id), {
+      ...relData,
+      status: 'rascunho',
+      qtd_bops: dados.bop_rondas.length,
+      qtd_vtrs: dados.viaturas.length,
+      updated_at: serverTimestamp()
+    });
+
+    // Excluir BOp e integrantes antigos e recriar
+    const bopSnap = await getDocs(query(collection(db, 'bop_rondas'), where('relatorio_id','==',id)));
+    for (const b of bopSnap.docs) {
+      const intSnap = await getDocs(query(collection(db, 'bop_integrantes'), where('bop_ronda_id','==',b.id)));
+      for (const i of intSnap.docs) await deleteDoc(doc(db, 'bop_integrantes', i.id));
+      await deleteDoc(doc(db, 'bop_rondas', b.id));
+    }
+    const vtrSnap = await getDocs(query(collection(db, 'viaturas'), where('relatorio_id','==',id)));
+    for (const v of vtrSnap.docs) {
+      const intSnap = await getDocs(query(collection(db, 'vtr_integrantes'), where('viatura_id','==',v.id)));
+      for (const i of intSnap.docs) await deleteDoc(doc(db, 'vtr_integrantes', i.id));
+      await deleteDoc(doc(db, 'viaturas', v.id));
+    }
+
+    // Recriar BOp
+    for (const bop of dados.bop_rondas) {
+      const { integrantes: bopInts, ...bopData } = bop;
+      const bopRef = await addDoc(collection(db, 'bop_rondas'), { relatorio_id: id, ...bopData });
+      for (const int of (bopInts || [])) {
+        const { items, ...intBase } = int;
+        await addDoc(collection(db, 'bop_integrantes'), {
+          bop_ronda_id: bopRef.id, relatorio_id: id, ...intBase,
+          items: (items||[]).map(i=>({ item:i.item, estado:i.estado??0 }))
+        });
+      }
+    }
+
+    // Recriar viaturas
+    for (const vtr of dados.viaturas) {
+      const { integrantes: vtrInts, ...vtrData } = vtr;
+      const vtrRef = await addDoc(collection(db, 'viaturas'), { relatorio_id: id, ...vtrData });
+      for (const int of (vtrInts || [])) {
+        const { items, ...intBase } = int;
+        await addDoc(collection(db, 'vtr_integrantes'), {
+          viatura_id: vtrRef.id, relatorio_id: id, ...intBase,
+          items: (items||[]).map(i=>({ item:i.item, estado:i.estado??0 }))
+        });
+      }
+    }
+
+    return true;
+  } catch(e) {
+    throw new Error('Firestore: ' + e.message);
+  }
+};
+
 // ── BUSCAR DO FIRESTORE ───────────────────────────
 window.buscarFirestore = async function(filtros) {
   if (!fbOk) return null;
@@ -121,6 +181,41 @@ window.buscarFirestore = async function(filtros) {
 window.excluirFirestore = async function(id) {
   if (!fbOk) return;
   await deleteDoc(doc(db, 'relatorios', id));
+};
+
+// ── CARREGAR RELATÓRIO COMPLETO DO FIRESTORE ──────
+window.carregarRelatorioCompleto = async function(id) {
+  if (!fbOk) return null;
+  try {
+    // Relatório principal
+    const relSnap = await getDoc(doc(db, 'relatorios', id));
+    if (!relSnap.exists()) return null;
+    const rel = { id: relSnap.id, ...relSnap.data() };
+
+    // BOp rondadas
+    const bopSnap = await getDocs(query(collection(db, 'bop_rondas'), where('relatorio_id', '==', id)));
+    rel.bop_rondas = [];
+    for (const b of bopSnap.docs) {
+      const bop = { id: b.id, ...b.data() };
+      const intSnap = await getDocs(query(collection(db, 'bop_integrantes'), where('bop_ronda_id', '==', b.id)));
+      bop.integrantes = intSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      rel.bop_rondas.push(bop);
+    }
+
+    // Viaturas
+    const vtrSnap = await getDocs(query(collection(db, 'viaturas'), where('relatorio_id', '==', id)));
+    rel.viaturas = [];
+    for (const v of vtrSnap.docs) {
+      const vtr = { id: v.id, ...v.data() };
+      const intSnap = await getDocs(query(collection(db, 'vtr_integrantes'), where('viatura_id', '==', v.id)));
+      vtr.integrantes = intSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      rel.viaturas.push(vtr);
+    }
+
+    return rel;
+  } catch(e) {
+    throw new Error('Firestore: ' + e.message);
+  }
 };
 
 // ── SALVAR CONFIGURAÇÕES NO FIRESTORE ─────────────
@@ -274,6 +369,11 @@ body{font-family:'Barlow',sans-serif;font-size:14px;background:var(--s2);color:v
 .bdraf{background:var(--amber-bg);color:var(--amber)}
 
 /* CONSULTA */
+.btn-acao{font-size:11px;font-weight:700;padding:4px 9px;border-radius:var(--r);cursor:pointer;font-family:'Barlow',sans-serif;border:1px solid transparent;transition:.12s}
+.btn-pdf{background:#E6F1FB;color:#0C447C;border-color:#B5D4F4}
+.btn-pdf:hover{background:#B5D4F4}
+.btn-reabrir{background:#EAF3DE;color:var(--gok);border-color:#8dc63f}
+.btn-reabrir:hover{background:#c5e1a5}
 .ctable{width:100%;border-collapse:collapse;font-size:13px}
 .ctable th{padding:9px 12px;font-family:'Barlow Condensed',sans-serif;font-size:10px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:var(--tx3);background:var(--s3);border-bottom:1px solid var(--bd);text-align:left}
 .ctable td{padding:10px 12px;border-bottom:1px solid var(--bd2);color:var(--tx);vertical-align:middle}
@@ -308,6 +408,37 @@ body{font-family:'Barlow',sans-serif;font-size:14px;background:var(--s2);color:v
   .igrid{grid-template-columns:1fr}
   .tsub,.tfb{display:none}
 }
+
+/* PDF PRINT */
+.pdf-area { display:none; }
+@media print {
+  body > * { display:none !important; }
+  .pdf-area { display:block !important; font-family:Arial,sans-serif; font-size:9.5pt; color:#000; }
+  .pdf-header { background:#1a3a5c !important; color:#fff !important; padding:12px 16px; border-radius:6px 6px 0 0; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  .pdf-header h2 { font-size:14pt; font-weight:bold; margin:0 0 3px; }
+  .pdf-header p  { font-size:9pt; opacity:.8; margin:0; }
+  .pdf-section { border:1px solid #ccc; padding:10px 14px; margin-bottom:10px; border-radius:4px; break-inside:avoid; }
+  .pdf-section h3 { font-size:10pt; font-weight:bold; border-bottom:1px solid #ccc; padding-bottom:4px; margin-bottom:8px; text-transform:uppercase; letter-spacing:.5px; color:#1a3a5c; }
+  .pdf-kv { display:grid; grid-template-columns:160px 1fr; gap:3px 10px; font-size:9pt; }
+  .pdf-kv span:first-child { color:#555; }
+  .pdf-kv span:last-child  { font-weight:bold; }
+  .pdf-member { border:1px solid #ddd; border-radius:4px; padding:8px 10px; margin-bottom:7px; break-inside:avoid; }
+  .pdf-member h4 { font-size:9pt; font-weight:bold; margin:0 0 5px; color:#1a3a5c; }
+  .pdf-items-ok  { font-size:8.5pt; color:#27500A; margin-bottom:2px; }
+  .pdf-items-nok { font-size:8.5pt; color:#A32D2D; margin-bottom:2px; }
+  .pdf-obs { font-size:8.5pt; color:#444; margin-top:4px; }
+  .pdf-log { background:#f5f6fa; border-radius:4px; padding:7px 10px; margin-top:7px; }
+  .pdf-bop-hdr { background:#1a3a5c; color:#fff; padding:5px 10px; border-radius:4px 4px 0 0; font-weight:bold; font-size:9.5pt; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  .pdf-vtr-hdr { background:#0F6E56; color:#fff; padding:5px 10px; border-radius:4px 4px 0 0; font-weight:bold; font-size:9.5pt; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  .pdf-footer { text-align:center; font-size:8pt; color:#999; margin-top:16px; border-top:1px solid #ddd; padding-top:8px; }
+}
+
+/* MODAL LOADING */
+.modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:999; align-items:center; justify-content:center; }
+.modal-overlay.show { display:flex; }
+.modal-box { background:#fff; border-radius:12px; padding:28px 32px; text-align:center; font-size:14px; color:var(--tx); min-width:240px; }
+.modal-box p { margin-top:10px; color:var(--tx2); font-size:13px; }
+
 </style>
 </head>
 <body>
@@ -458,24 +589,28 @@ body{font-family:'Barlow',sans-serif;font-size:14px;background:var(--s2);color:v
   </div>
 </div>
 
+<!-- MODAL LOADING -->
+<div class="modal-overlay" id="modal-loading">
+  <div class="modal-box">
+    <span class="spinner" style="border-top-color:var(--navy-mid);width:24px;height:24px;border-width:3px"></span>
+    <p id="modal-msg">Carregando...</p>
+  </div>
+</div>
+
+<!-- ÁREA DE IMPRESSÃO PDF (oculta na tela) -->
+<div class="pdf-area" id="pdf-area"></div>
+
 </div><!-- /container -->
 
 <script>
 // ── DADOS ──────────────────────────────────────────
 // Listas editáveis — valores padrão
-const DEFAULTS = {
-  bop: ['304/1','304/2','308/1','310/1','310/2','310/3','310/4','326/1','326/2','326/3','330/5','330/6','330/7','333/1','333/2','334/1','334/2','334/3'],
-  opm: ['3º BPRv','1ª Cia — Araraquara','2ª Cia — Rio Claro','3ª Cia — São José do Rio Preto','4ª Cia — Ribeirão Preto'],
-  pel: ['Sede','1º Pel','2º Pel','3º Pel'],
-  of:  ['1º Ten PM Marcelo Ferraz','1º Ten PM Gabriel','1º Ten PM Cutis','1º Ten PM Severo','1º Ten PM Jean','1º Ten PM Tavella','2º Ten PM Ferraz'],
-  cc:  ['3bprv1ciap3@policiamilitar.sp.gov.br','3bprv2ciap3@policiamilitar.sp.gov.br']
-};
-
-let BOPS = [...DEFAULTS.bop];
-let OPM  = [...DEFAULTS.opm];
-let PEL  = [...DEFAULTS.pel];
-let OF   = [...DEFAULTS.of];
-let CC   = [...DEFAULTS.cc];
+// Valores iniciais vazios — tudo vem do Firebase
+let BOPS = [];
+let OPM  = [];
+let PEL  = [];
+let OF   = [];
+let CC   = [];
 
 // Salva no Firebase e atualiza a lista local
 async function saveList(key, arr) {
@@ -483,15 +618,45 @@ async function saveList(key, arr) {
   await window.salvarConfigFirestore(key, arr);
 }
 
+// Padrões de fábrica — usados APENAS se o Firebase não tiver nada cadastrado ainda
+const FABRICA = {
+  bop: ['304/1','304/2','308/1','310/1','310/2','310/3','310/4','326/1','326/2','326/3','330/5','330/6','330/7','333/1','333/2','334/1','334/2','334/3'],
+  opm: ['3º BPRv','1ª Cia — Araraquara','2ª Cia — Rio Claro','3ª Cia — São José do Rio Preto','4ª Cia — Ribeirão Preto'],
+  pel: ['Sede','1º Pel','2º Pel','3º Pel'],
+  of:  ['1º Ten PM Marcelo Ferraz','1º Ten PM Gabriel','1º Ten PM Cutis','1º Ten PM Severo','1º Ten PM Jean','1º Ten PM Tavella','2º Ten PM Ferraz'],
+  cc:  ['3bprv1ciap3@policiamilitar.sp.gov.br','3bprv2ciap3@policiamilitar.sp.gov.br']
+};
+
 // Carrega configurações do Firebase ao iniciar
+// Se uma lista ainda não existir no Firebase, grava os padrões de fábrica automaticamente
 async function carregarConfigs() {
   const cfg = await window.carregarConfigFirestore();
-  if (!cfg) return;
-  if (cfg.opm)  { OPM  = cfg.opm;  }
-  if (cfg.pel)  { PEL  = cfg.pel;  }
-  if (cfg.bop)  { BOPS = cfg.bop;  }
-  if (cfg.of)   { OF   = cfg.of;   }
-  if (cfg.cc)   { CC   = cfg.cc;   }
+
+  // Sem Firebase — usar padrões locais temporariamente
+  if (!cfg) {
+    BOPS = [...FABRICA.bop];
+    OPM  = [...FABRICA.opm];
+    PEL  = [...FABRICA.pel];
+    OF   = [...FABRICA.of];
+    CC   = [...FABRICA.cc];
+    refreshSelects();
+    renderAllLM();
+    return;
+  }
+
+  // Para cada lista: se já existe no Firebase usa ela, senão grava os padrões de fábrica
+  const keys = ['opm','pel','bop','of','cc'];
+  for (const key of keys) {
+    if (cfg[key] && cfg[key].length > 0) {
+      LISTA_MAP[key].setLocal(cfg[key]);
+    } else {
+      // Primeira execução: gravar padrões no Firebase
+      const fab = FABRICA[key];
+      LISTA_MAP[key].setLocal(fab);
+      await window.salvarConfigFirestore(key, fab);
+    }
+  }
+
   refreshSelects();
   renderAllLM();
 }
@@ -503,10 +668,14 @@ const IT_VO=['CPP correto / alterações justificadas','Lançamentos no PPRI con
 const IT_VC=['Limpeza interna e externa da viatura','Sistema de iluminação operacional','Equipamentos (radar, etilômetro, etc.)','Manutenção 1º escalão em dia','Documentação da viatura presente','Cartão de estacionamento presente'];
 const IT_LOG=['Limpeza e conservação das dependências','Limpeza e conservação das viaturas estacionadas','Controle de estacionamento / cartão','Armamento e materiais bélicos verificados','Equipamentos de telemática e rádio'];
 
-let selBops=new Set(), mCtrl={}, vCount=0, vList=[], savedRels=[];
+let selBops=new Set(), mCtrl={}, vCount=0, vList=[], savedRels=[], rascunhoOrigemId=null, rascunhoAtualId=null;
 
 // ── NAV ────────────────────────────────────────────
 function navPage(p){
+  if(p==='form' && rascunhoAtualId && !rascunhoOrigemId){
+    if(!confirm('Há um rascunho em andamento. Iniciar nova ronda irá descartar o rascunho não salvo da sessão. Continuar?'))return;
+    rascunhoAtualId=null;
+  }
   ['form','consulta'].forEach(x=>{
     document.getElementById('page-'+x).classList.toggle('active',x===p);
     document.getElementById('nav-'+x).classList.toggle('active',x===p);
@@ -777,13 +946,44 @@ async function salvar(status){
   }
 
   try{
-    const id=await window.salvarFirestore(dados);
-    if(id){
-      okEl.textContent=`Relatório salvo no Firebase! ID: ${id}. Acesse "Consultar" para visualizar.`;
-      okEl.style.display='block';
+    let id = null;
+
+    if(status === 'rascunho' && rascunhoAtualId) {
+      // Atualizar rascunho existente
+      await window.atualizarRascunho(rascunhoAtualId, dados);
+      id = rascunhoAtualId;
+      okEl.textContent = `Rascunho atualizado com sucesso!`;
+      okEl.style.display = 'block';
     } else {
-      warnEl.textContent='Firebase não configurado. Relatório salvo apenas localmente nesta sessão. Configure o Firebase na aba Configurações.';
-      warnEl.style.display='block';
+      // Criar novo documento
+      id = await window.salvarFirestore(dados);
+      if(id) {
+        if(status === 'rascunho') {
+          // Guardar ID para atualizações subsequentes
+          rascunhoAtualId = id;
+          okEl.textContent = `Rascunho salvo no Firebase! Você pode continuar editando e salvar novamente.`;
+          okEl.style.display = 'block';
+        } else {
+          // Finalizado — excluir rascunho de origem se houver
+          const idParaExcluir = rascunhoOrigemId || rascunhoAtualId;
+          if(idParaExcluir) {
+            try {
+              await window.excluirFirestore(idParaExcluir);
+              rascunhoOrigemId = null;
+              rascunhoAtualId = null;
+              okEl.textContent = `Relatório finalizado e salvo! Rascunho excluído automaticamente.`;
+            } catch(e) {
+              okEl.textContent = `Relatório finalizado e salvo! (ID: ${id}). Exclua o rascunho manualmente na consulta.`;
+            }
+          } else {
+            okEl.textContent = `Relatório finalizado e salvo no Firebase!`;
+          }
+          okEl.style.display = 'block';
+        }
+      } else {
+        warnEl.textContent = 'Firebase não configurado. Relatório salvo apenas localmente nesta sessão.';
+        warnEl.style.display = 'block';
+      }
     }
   } catch(err){
     errEl.textContent=`Erro ao salvar: ${err.message}`;
@@ -820,14 +1020,22 @@ async function buscar(){
     if(!lista.length){tbody.innerHTML='';empty.style.display='block';table.style.display='none';return;}
     empty.style.display='none';table.style.display='';
     const fmt=d=>d?new Date(d+'T00:00:00').toLocaleDateString('pt-BR'):'—';
-    tbody.innerHTML=lista.map(r=>`<tr>
-      <td><strong>${fmt(r.data_ronda)}</strong></td>
-      <td>${r.opm||'—'}</td><td>${r.pelotao||'—'}</td><td>${r.oficial||'—'}</td>
-      <td>${r.h_inicio||'—'}</td>
-      <td>${r.qtd_bops||0}</td><td>${r.qtd_vtrs||0}</td>
-      <td><span class="badge ${r.status==='finalizado'?'bfin':'bdraf'}">${r.status==='finalizado'?'Finalizado':'Rascunho'}</span></td>
-      <td><button class="btn-del" onclick="excluir('${r.id}')">Excluir</button></td>
-    </tr>`).join('');
+    tbody.innerHTML=lista.map(r=>{
+      const fin = r.status==='finalizado';
+      const acoes = fin
+        ? `<button class="btn-acao btn-pdf" onclick="gerarPDF('${r.id}')">📄 PDF</button>
+           <button class="btn-del" onclick="excluir('${r.id}')">Excluir</button>`
+        : `<button class="btn-acao btn-reabrir" onclick="reabrirRascunho('${r.id}')">✏ Reabrir</button>
+           <button class="btn-del" onclick="excluir('${r.id}')">Excluir</button>`;
+      return `<tr>
+        <td><strong>${fmt(r.data_ronda)}</strong></td>
+        <td>${r.opm||'—'}</td><td>${r.pelotao||'—'}</td><td>${r.oficial||'—'}</td>
+        <td>${r.h_inicio||'—'}</td>
+        <td>${r.qtd_bops||0}</td><td>${r.qtd_vtrs||0}</td>
+        <td><span class="badge ${fin?'bfin':'bdraf'}">${fin?'Finalizado':'Rascunho'}</span></td>
+        <td style="display:flex;gap:5px;flex-wrap:wrap">${acoes}</td>
+      </tr>`;
+    }).join('');
   } catch(err){
     tbody.innerHTML=`<tr><td colspan="9" style="padding:20px;text-align:center;color:var(--rnok)">Erro: ${err.message}</td></tr>`;
   }
@@ -840,6 +1048,231 @@ async function excluir(id){
     savedRels=savedRels.filter(r=>r.id!==id);
     buscar();
   } catch(err){alert('Erro ao excluir: '+err.message);}
+}
+
+// ── MODAL HELPERS ──────────────────────────────────
+function showModal(msg){ const m=document.getElementById('modal-loading'); m.querySelector('#modal-msg').textContent=msg; m.classList.add('show'); }
+function hideModal(){ document.getElementById('modal-loading').classList.remove('show'); }
+
+// ── GERAR PDF ───────────────────────────────────────
+async function gerarPDF(id){
+  showModal('Carregando relatório...');
+  try{
+    const rel = await window.carregarRelatorioCompleto(id);
+    if(!rel){ hideModal(); alert('Relatório não encontrado.'); return; }
+    hideModal();
+    const area = document.getElementById('pdf-area');
+    area.innerHTML = buildPDFHtml(rel);
+    setTimeout(()=>{ window.print(); }, 300);
+  } catch(e){ hideModal(); alert('Erro ao gerar PDF: '+e.message); }
+}
+
+function buildPDFHtml(rel){
+  const fmt = d => d ? new Date(d+'T00:00:00').toLocaleDateString('pt-BR') : '—';
+  const estadoLabel = e => e===1 ? '✓ Correto' : e===2 ? '✗ Incorreção' : null;
+
+  function renderMembro(m, idx){
+    const papelLabel = m.papel==='enc' ? 'Encarregado' : m.papel==='mot' ? 'Motorista' : `Auxiliar ${idx}`;
+    const ok  = (m.items||[]).filter(i=>i.estado===1).map(i=>i.item);
+    const nok = (m.items||[]).filter(i=>i.estado===2).map(i=>i.item);
+    return `<div class="pdf-member">
+      <h4>${papelLabel}: ${m.nome||'—'} | RE: ${m.re||'—'} | Arma: ${m.arma_num||'—'} | Colete: ${m.colete_num||'—'} | Tipo sang.: ${m.tipo_sang||'—'}</h4>
+      ${ok.length  ? `<div class="pdf-items-ok"><b>✓ Correto:</b> ${ok.join(' · ')}</div>` : ''}
+      ${nok.length ? `<div class="pdf-items-nok"><b>✗ Incorreções:</b> ${nok.join(' · ')}</div>` : ''}
+      ${m.observacoes ? `<div class="pdf-obs"><b>Obs.:</b> ${m.observacoes}</div>` : ''}
+    </div>`;
+  }
+
+  let html = `<div class="pdf-header">
+    <h2>Relatório de Ronda — Cmdt de Pelotão Rodoviário</h2>
+    <p>Governo do Estado de São Paulo · Polícia Militar · 3º BPRv · OS Nº 3BPRv-039/03/2023 · NI CPRv-004/300/23</p>
+  </div>`;
+
+  // Dados gerais
+  html += `<div class="pdf-section"><h3>1. Dados da Ronda</h3><div class="pdf-kv">
+    <span>OPM</span><span>${rel.opm||'—'}</span>
+    <span>Pelotão</span><span>${rel.pelotao||'—'}</span>
+    <span>Oficial responsável</span><span>${rel.oficial||'—'}</span>
+    <span>Motorista</span><span>${rel.motorista_nome||'—'} · RE: ${rel.motorista_re||'—'} · Tipo sang.: ${rel.motorista_tipo_sang||'—'}</span>
+    <span>Data</span><span>${fmt(rel.data_ronda)}</span>
+    <span>Início / Término</span><span>${rel.h_inicio||'—'} / ${rel.h_termino||'—'}</span>
+    <span>Viatura principal</span><span>${rel.vtr_principal||'—'}</span>
+    <span>KM inicial / final</span><span>${rel.km_inicial||'—'} / ${rel.km_final||'—'}</span>
+    <span>PPRI</span><span>${rel.ppri||'—'}</span>
+    <span>Dispensa subseq.</span><span>${rel.dispensa||'—'}</span>
+  </div>${rel.obs_novidades?`<div style="margin-top:8px;font-size:9pt"><b>Outras novidades:</b> ${rel.obs_novidades}</div>`:''}</div>`;
+
+  // BOp rondadas
+  if((rel.bop_rondas||[]).length){
+    html += `<div class="pdf-section"><h3>2. BOp / Sedes Rondadas</h3>`;
+    rel.bop_rondas.forEach((bop,i)=>{
+      let auxN=0;
+      html += `<div style="margin-bottom:10px;border:1px solid #ddd;border-radius:4px;overflow:hidden">
+        <div class="pdf-bop-hdr">Ronda ${i+1} — ${bop.bop} · Horário: ${bop.horario||'—'} · SP/Km: ${bop.sp_km||'—'}</div>
+        <div style="padding:8px 10px">`;
+      (bop.integrantes||[]).forEach(m=>{ if(m.papel==='aux')auxN++; html+=renderMembro(m,auxN); });
+      const logOk  = (bop.log_items||[]).filter(i=>i.estado===1).map(i=>i.item);
+      const logNok = (bop.log_items||[]).filter(i=>i.estado===2).map(i=>i.item);
+      if(logOk.length||logNok.length||bop.obs_logistica){
+        html+=`<div class="pdf-log"><b style="font-size:9pt">Logística:</b>
+          ${logOk.length?`<div class="pdf-items-ok">✓ ${logOk.join(' · ')}</div>`:''}
+          ${logNok.length?`<div class="pdf-items-nok">✗ ${logNok.join(' · ')}</div>`:''}
+          ${bop.obs_logistica?`<div class="pdf-obs"><b>Obs.:</b> ${bop.obs_logistica}</div>`:''}
+        </div>`;
+      }
+      if(bop.obs_geral) html+=`<div class="pdf-obs" style="margin-top:5px"><b>Obs. geral:</b> ${bop.obs_geral}</div>`;
+      html += `</div></div>`;
+    });
+    html += `</div>`;
+  }
+
+  // Viaturas
+  if((rel.viaturas||[]).length){
+    html += `<div class="pdf-section"><h3>3. Viaturas Rondadas</h3>`;
+    rel.viaturas.forEach((vtr,i)=>{
+      let auxN=0;
+      html += `<div style="margin-bottom:10px;border:1px solid #ddd;border-radius:4px;overflow:hidden">
+        <div class="pdf-vtr-hdr">Viatura ${i+1}: ${vtr.prefixo||'—'} · ${vtr.horario||'—'} · SP/Km: ${vtr.sp_km||'—'}</div>
+        <div style="padding:8px 10px">
+          <div style="font-size:9pt;margin-bottom:6px"><b>Odôm. ini/atual:</b> ${vtr.odo_inicial||'—'} / ${vtr.odo_atual||'—'} &nbsp;·&nbsp; <b>CPP:</b> ${vtr.cpp||'—'} &nbsp;·&nbsp; <b>Abast.:</b> ${vtr.abastecimento||'—'} &nbsp;·&nbsp; <b>Limpeza:</b> ${vtr.limpeza||'—'}</div>`;
+      (vtr.integrantes||[]).forEach(m=>{ if(m.papel==='aux')auxN++; html+=renderMembro(m,auxN); });
+      if(vtr.produtividade||vtr.boe_num) html+=`<div style="font-size:9pt;margin-top:4px"><b>Produtividade:</b> ${vtr.produtividade||'—'} &nbsp;·&nbsp; <b>BO-e Nº:</b> ${vtr.boe_num||'—'}</div>`;
+      if(vtr.obs_geral) html+=`<div class="pdf-obs" style="margin-top:4px"><b>Obs. geral:</b> ${vtr.obs_geral}</div>`;
+      html += `</div></div>`;
+    });
+    html += `</div>`;
+  }
+
+  html += `<div class="pdf-footer">Relatório gerado via Livro de Ronda Digital — 3º BPRv · ${new Date().toLocaleString('pt-BR')}</div>`;
+  return html;
+}
+
+// ── REABRIR RASCUNHO ────────────────────────────────
+async function reabrirRascunho(id){
+  showModal('Carregando rascunho...');
+  try{
+    const rel = await window.carregarRelatorioCompleto(id);
+    if(!rel){ hideModal(); alert('Relatório não encontrado.'); return; }
+
+    // Navegar para formulário
+    navPage('form');
+    showTab('dados');
+    hideModal();
+
+    // Preencher dados gerais
+    const campos = {
+      'data-r': rel.data_ronda, 'sel-opm': rel.opm, 'sel-pel': rel.pelotao,
+      'sel-of': rel.oficial, 'mot-nome': rel.motorista_nome, 'mot-re': rel.motorista_re,
+      'mot-tipo': rel.motorista_tipo_sang, 'h-ini': rel.h_inicio, 'h-fim': rel.h_termino,
+      'ppri': rel.ppri, 'vtr-num': rel.vtr_principal, 'km-i': rel.km_inicial,
+      'km-f': rel.km_final, 'dispensa': rel.dispensa, 'obs-nov': rel.obs_novidades,
+      'email-cc': rel.email_cc
+    };
+    Object.entries(campos).forEach(([id, val]) => {
+      const el = document.getElementById(id);
+      if(el && val != null) el.value = val;
+    });
+
+    // Limpar estado anterior
+    selBops.clear(); mCtrl={}; vCount=0; vList=[];
+    document.getElementById('bop-blocks').innerHTML = '';
+    document.getElementById('vtr-blocks').innerHTML = '';
+    renderBopChips();
+
+    // Recarregar BOp
+    await new Promise(r=>setTimeout(r,100));
+    for(const bop of (rel.bop_rondas||[])){
+      selBops.add(bop.bop);
+      document.querySelectorAll('.bchip').forEach(chip=>{
+        if(chip.textContent===bop.bop) chip.classList.add('sel');
+      });
+    }
+    renderBopBlocks();
+
+    await new Promise(r=>setTimeout(r,200));
+
+    for(const bop of (rel.bop_rondas||[])){
+      const bid = bop.bop.replace('/','_');
+      const hEl = document.getElementById(`bop-${bid}-hora`);
+      const kEl = document.getElementById(`bop-${bid}-spkm`);
+      if(hEl) hEl.value = bop.horario||'';
+      if(kEl) kEl.value = bop.sp_km||'';
+      // Logística
+      (bop.log_items||[]).forEach((it,i)=>{
+        const b=document.getElementById(`log-${bid}-${i}`);
+        if(b) b.dataset.s=String(it.estado||0);
+      });
+      const logObs=document.getElementById(`log-${bid}-obs`);
+      if(logObs) logObs.value=bop.obs_logistica||'';
+      const bopObs=document.getElementById(`bop-${bid}-obs`);
+      if(bopObs) bopObs.value=bop.obs_geral||'';
+      // Integrantes
+      const scope=`bop_${bid}`;
+      for(const m of (bop.integrantes||[])){
+        addMember(scope, m.papel, m.papel==='enc'?1:2, 'bop');
+        const container=document.getElementById(`mlist-${scope}`);
+        const cards=[...container.querySelectorAll('.mwrap')];
+        const card=cards[cards.length-1];
+        if(!card) continue;
+        if(card.querySelector('.m-nome')) card.querySelector('.m-nome').value=m.nome||'';
+        if(card.querySelector('.m-re'))   card.querySelector('.m-re').value=m.re||'';
+        if(card.querySelector('.m-tipo')) card.querySelector('.m-tipo').value=m.tipo_sang||'';
+        if(card.querySelector('.m-arma')) card.querySelector('.m-arma').value=m.arma_num||'';
+        if(card.querySelector('.m-colete')) card.querySelector('.m-colete').value=m.colete_num||'';
+        if(card.querySelector('.m-arm'))  card.querySelector('.m-arm').value=m.armamento||'';
+        if(card.querySelector('.m-2a'))   card.querySelector('.m-2a').value=m.segunda_arma||'';
+        const uid=card.id;
+        if(document.getElementById(`${uid}_obs`)) document.getElementById(`${uid}_obs`).value=m.observacoes||'';
+        card.querySelectorAll('.ibtn').forEach((btn,i)=>{
+          if(m.items&&m.items[i]) btn.dataset.s=String(m.items[i].estado||0);
+        });
+      }
+    }
+
+    // Recarregar viaturas
+    for(const vtr of (rel.viaturas||[])){
+      addVtr();
+      const n=vList[vList.length-1];
+      const set=(id,v)=>{ const e=document.getElementById(id); if(e&&v!=null) e.value=v; };
+      set(`vp-${n}`,vtr.prefixo); set(`vh-${n}`,vtr.horario); set(`vk-${n}`,vtr.sp_km);
+      set(`vc-${n}`,vtr.cpp); set(`voi-${n}`,vtr.odo_inicial); set(`voa-${n}`,vtr.odo_atual);
+      set(`vab-${n}`,vtr.abastecimento); set(`vl-${n}`,vtr.limpeza);
+      set(`vprod-${n}`,vtr.produtividade); set(`vboe-${n}`,vtr.boe_num);
+      set(`vobs-${n}`,vtr.obs_geral);
+      const vbl=document.getElementById(`vbl-${n}`);
+      if(vbl) vbl.textContent=vtr.prefixo||'—';
+      const scope=`vtr_${n}`;
+      for(const m of (vtr.integrantes||[])){
+        const maxN=m.papel==='enc'?1:m.papel==='mot'?1:2;
+        addMember(scope, m.papel, maxN, 'vtr');
+        const container=document.getElementById(`mlist-${scope}`);
+        const cards=[...container.querySelectorAll('.mwrap')];
+        const card=cards[cards.length-1];
+        if(!card) continue;
+        if(card.querySelector('.m-nome'))   card.querySelector('.m-nome').value=m.nome||'';
+        if(card.querySelector('.m-re'))     card.querySelector('.m-re').value=m.re||'';
+        if(card.querySelector('.m-tipo'))   card.querySelector('.m-tipo').value=m.tipo_sang||'';
+        if(card.querySelector('.m-arma'))   card.querySelector('.m-arma').value=m.arma_num||'';
+        if(card.querySelector('.m-colete')) card.querySelector('.m-colete').value=m.colete_num||'';
+        if(card.querySelector('.m-arm'))    card.querySelector('.m-arm').value=m.armamento||'';
+        if(card.querySelector('.m-2a'))     card.querySelector('.m-2a').value=m.segunda_arma||'';
+        const uid=card.id;
+        if(document.getElementById(`${uid}_obs`)) document.getElementById(`${uid}_obs`).value=m.observacoes||'';
+        card.querySelectorAll('.ibtn').forEach((btn,i)=>{
+          if(m.items&&m.items[i]) btn.dataset.s=String(m.items[i].estado||0);
+        });
+      }
+    }
+
+    // Mostrar aviso
+    const okEl=document.getElementById('alert-ok');
+    rascunhoOrigemId = id;
+    rascunhoAtualId = id;
+    okEl.textContent=`Rascunho carregado. Você pode salvar novamente ou finalizar — o rascunho será excluído automaticamente.`;
+    okEl.style.display='block';
+    showTab('dados');
+
+  } catch(e){ hideModal(); alert('Erro ao reabrir: '+e.message); }
 }
 
 function renderSavedList(){
