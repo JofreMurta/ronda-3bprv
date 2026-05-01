@@ -5,11 +5,19 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Livro de Ronda Digital — 3º BPRv</title>
 
-<!-- Firebase SDK -->
+<!-- Firebase SDK via importmap -->
+<script type="importmap">
+{
+  "imports": {
+    "firebase/app": "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js",
+    "firebase/firestore": "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js"
+  }
+}
+</script>
 <script type="module">
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, addDoc, getDocs, doc, deleteDoc, setDoc, getDoc, updateDoc, query, where, orderBy, serverTimestamp }
-  from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+  from 'firebase/firestore';
 
 // ── CONFIGURAÇÃO FIREBASE ─────────────────────────
 // Substitua com os dados do seu projeto Firebase
@@ -243,10 +251,50 @@ window.carregarConfigFirestore = async function() {
     const result = {};
     for (const key of keys) {
       const snap = await getDoc(doc(db, 'configuracoes', key));
-      if (snap.exists()) result[key] = snap.data().itens;
+      if (snap.exists()) {
+        const data = snap.data();
+        // Suporta tanto campo 'itens' quanto campos diretos (arrays)
+        const arr = data.itens || data.valores || data.lista || null;
+        if (arr && Array.isArray(arr)) {
+          result[key] = arr;
+        } else {
+          // Tentar pegar qualquer campo que seja array
+          const campos = Object.values(data).filter(v => Array.isArray(v));
+          if (campos.length > 0) result[key] = campos[0];
+        }
+        console.log('Config carregada:', key, result[key]);
+      } else {
+        console.log('Config não encontrada no Firebase:', key);
+      }
     }
     return result;
-  } catch(e) { console.warn('Erro ao carregar config:', e.message); return null; }
+  } catch(e) {
+    console.warn('Erro ao carregar config:', e.message);
+    return null;
+  }
+};
+
+// ── DIAGNÓSTICO — ler configurações brutas do Firebase ──
+window.diagnosticarConfig = async function() {
+  if (!fbOk) { alert('Firebase não conectado.'); return; }
+  try {
+    const keys = ['opm','pel','bop','of','cc'];
+    let msg = 'Dados encontrados no Firebase:\n\n';
+    for (const key of keys) {
+      const snap = await getDoc(doc(db, 'configuracoes', key));
+      if (snap.exists()) {
+        const data = snap.data();
+        const campos = Object.keys(data).filter(k => k !== 'updated_at');
+        msg += key.toUpperCase() + ': ' + campos.map(c => {
+          const v = data[c];
+          return Array.isArray(v) ? c + '=[' + v.length + ' itens]' : c + '=' + JSON.stringify(v).slice(0,30);
+        }).join(', ') + '\n';
+      } else {
+        msg += key.toUpperCase() + ': NÃO ENCONTRADO\n';
+      }
+    }
+    alert(msg);
+  } catch(e) { alert('Erro: ' + e.message); }
 };
 </script>
 
@@ -562,7 +610,11 @@ body{font-family:'Barlow',sans-serif;font-size:14px;background:var(--s2);color:v
       <div style="font-size:13px;margin-bottom:4px">
         <span id="fb-status-cfg" style="font-weight:600">verificando...</span>
       </div>
-      <div style="font-size:11px;color:var(--tx3)">Projeto: passagemserv3bprv · southamerica-east1</div>
+      <div style="font-size:11px;color:var(--tx3);margin-bottom:12px">Projeto: passagemserv3bprv · southamerica-east1</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn-add" id="btn-diag" onclick="chamarFb('diagnosticarConfig')" style="font-size:12px;padding:6px 12px">🔍 Diagnosticar dados</button>
+        <button class="btn-add" onclick="restaurarPadroes()" style="font-size:12px;padding:6px 12px;color:var(--amber);border-color:var(--amber)">↺ Restaurar padrões de fábrica</button>
+      </div>
     </div>
     <div class="sec"><div class="stitle">OPM</div><div id="lm-opm" class="lm-box"></div>
       <div class="lm-add-row"><input type="text" id="new-opm" placeholder="Nova OPM..."><button class="btn-add" onclick="addItem('opm')">Adicionar</button></div></div>
@@ -1345,6 +1397,18 @@ async function toggleItem(key,i,ativo){
   refreshSelects();
 }
 
+async function restaurarPadroes(){
+  if(!confirm('Isso vai restaurar todas as listas (OPM, Pelotões, BOp, Oficiais) para os valores padrão de fábrica e gravar no Firebase. Continuar?')) return;
+  const keys = ['opm','pel','bop','of','cc'];
+  for(const key of keys){
+    const fab = FABRICA[key].map(v=>({valor:v,ativo:true}));
+    await LISTA_MAP[key].set(fab);
+  }
+  renderAllLM();
+  refreshSelects();
+  alert('Padrões restaurados com sucesso!');
+}
+
 function renderAllLM(){
   ['opm','pel','bop','of','cc'].forEach(k=>renderLM(k));
 }
@@ -1360,10 +1424,27 @@ async function init(){
   refreshSelects();
   renderAllLM();
   document.getElementById('data-r').value=new Date().toISOString().slice(0,10);
-  // Carregar listas do Firebase (substituirá os padrões se existirem)
+  // Carregar listas do Firebase
   await carregarConfigs();
+  // Sinalizar que o módulo Firebase está pronto
+  window._fbPronto = true;
+  window.dispatchEvent(new Event('fb-pronto'));
 }
 init();
+</script>
+
+<script>
+// Helper para chamar funções do módulo Firebase com segurança
+function chamarFb(fn, ...args) {
+  if (window._fbPronto && typeof window[fn] === 'function') {
+    window[fn](...args);
+  } else {
+    window.addEventListener('fb-pronto', () => {
+      if (typeof window[fn] === 'function') window[fn](...args);
+      else alert('Função não disponível: ' + fn);
+    }, { once: true });
+  }
+}
 </script>
 </body>
 </html>
