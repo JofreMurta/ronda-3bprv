@@ -313,38 +313,24 @@ body.imprimindo .pdf-area { display:block !important; }
   <!-- DADOS DA RONDA -->
   <div id="tab-dados" class="tc active">
     <div class="sec">
-      <div class="stitle">Identificação da OPM</div>
-      <div class="g3" style="margin-bottom:13px">
+      <div class="stitle">Cmt de Pel</div>
+      <div class="g3">
+        <div class="f"><label>Oficial responsável</label><select id="sel-of"></select></div>
         <div class="f"><label>OPM</label><select id="sel-opm"></select></div>
         <div class="f"><label>Pelotão</label><select id="sel-pel"></select></div>
-        <div class="f"><label>Oficial responsável</label><select id="sel-of"></select></div>
-      </div>
-      <div class="g3">
-        <div class="f"><label>Motorista — graduação e nome</label><input id="mot-nome" placeholder="Cb PM / Sd PM..."></div>
-        <div class="f"><label>RE do motorista</label><input id="mot-re" placeholder="RE 000000"></div>
-        <div class="f"><label>Tipo sanguíneo</label><input id="mot-tipo" placeholder="O+"></div>
       </div>
     </div>
     <div class="sec">
       <div class="stitle">Dados da escala</div>
-      <div class="g4" style="margin-bottom:13px">
+      <div class="g3">
         <div class="f"><label>Data</label><input type="date" id="data-r"></div>
         <div class="f"><label>Hora início</label><input type="time" id="h-ini" value="23:59"></div>
         <div class="f"><label>Hora término</label><input type="time" id="h-fim"></div>
-        <div class="f"><label>PPRI</label><input id="ppri" placeholder="__/__/__"></div>
-      </div>
-      <div class="g4">
-        <div class="f"><label>KM inicial</label><input type="number" id="km-i" placeholder="0"></div>
-        <div class="f"><label>KM final</label><input type="number" id="km-f" placeholder="0"></div>
-        <div class="f"><label>Nº viatura principal</label><input id="vtr-num" placeholder="PM-00000"></div>
-        <div class="f"><label>Dispensa subsequente?</label>
-          <select id="dispensa"><option value="nao">Não</option><option value="sim">Sim — após 03h30</option></select>
-        </div>
       </div>
     </div>
     <div class="sec">
-      <div class="stitle">Outras novidades</div>
-      <div class="f"><textarea id="obs-nov" placeholder="Registrar tudo que não conste nos demais campos..."></textarea></div>
+      <div class="stitle">Planejamento prévio de ronda</div>
+      <div class="f"><textarea id="obs-nov" placeholder="Descreva o planejamento prévio da ronda..." style="min-height:140px"></textarea></div>
     </div>
     <div class="sec">
       <div class="stitle">Salvar relatório</div>
@@ -733,8 +719,7 @@ let selBops=new Set(), mCtrl={}, vCount=0, vList=[], savedRels=[], rascunhoOrige
 // ── NAV ────────────────────────────────────────────
 function limparFormulario(){
   // Dados gerais
-  const campos=['data-r','sel-opm','sel-pel','sel-of','mot-nome','mot-re','mot-tipo',
-    'h-ini','h-fim','ppri','vtr-num','km-i','km-f','obs-nov'];
+  const campos=['data-r','sel-opm','sel-pel','sel-of','h-ini','h-fim','obs-nov'];
   campos.forEach(id=>{
     const el=document.getElementById(id);
     if(!el) return;
@@ -1003,10 +988,8 @@ function coletarIntegrantes(scope){
 
 function coletarDados(status){
   const relatorio={data_ronda:gv('data-r'),opm:gv('sel-opm'),pelotao:gv('sel-pel'),oficial:gv('sel-of'),
-    motorista_nome:gv('mot-nome'),motorista_re:gv('mot-re'),motorista_tipo_sang:gv('mot-tipo'),
-    h_inicio:gv('h-ini'),h_termino:gv('h-fim'),ppri:gv('ppri'),vtr_principal:gv('vtr-num'),
-    km_inicial:parseInt(gv('km-i'))||0,km_final:parseInt(gv('km-f'))||0,
-    dispensa:gv('dispensa'),obs_novidades:gv('obs-nov'),
+    h_inicio:gv('h-ini'),h_termino:gv('h-fim'),
+    obs_novidades:gv('obs-nov'),
     email_cc:''};
   const bop_rondas=[...selBops].map(bop=>{
     const bid=bop.replace('/','_'),scope=`bop_${bid}`;
@@ -1217,17 +1200,12 @@ function buildPDFHtml(rel){
 
   // 1. Dados gerais
   body += '<div class="sec"><h3>1. Dados da Ronda</h3><div class="kv">'
+    +'<span>Oficial responsável</span><span>'+(rel.oficial||'—')+'</span>'
     +'<span>OPM</span><span>'+(rel.opm||'—')+'</span>'
     +'<span>Pelotão</span><span>'+(rel.pelotao||'—')+'</span>'
-    +'<span>Oficial responsável</span><span>'+(rel.oficial||'—')+'</span>'
-    +'<span>Motorista</span><span>'+(rel.motorista_nome||'—')+' · RE: '+(rel.motorista_re||'—')+' · Tipo sang.: '+(rel.motorista_tipo_sang||'—')+'</span>'
     +'<span>Data</span><span>'+fmt(rel.data_ronda)+'</span>'
     +'<span>Início / Término</span><span>'+(rel.h_inicio||'—')+' / '+(rel.h_termino||'—')+'</span>'
-    +'<span>Viatura principal</span><span>'+(rel.vtr_principal||'—')+'</span>'
-    +'<span>KM inicial / final</span><span>'+(rel.km_inicial||'—')+' / '+(rel.km_final||'—')+'</span>'
-    +'<span>PPRI</span><span>'+(rel.ppri||'—')+'</span>'
-    +'<span>Dispensa subseq.</span><span>'+(rel.dispensa||'—')+'</span>'
-    +'</div>'+(rel.obs_novidades?'<div style="margin-top:8px;font-size:9pt"><b>Outras novidades:</b> '+rel.obs_novidades+'</div>':'')+'</div>';
+    +'</div>'+(rel.obs_novidades?'<div style="margin-top:8px;font-size:9pt"><b>Planejamento prévio de ronda:</b> '+rel.obs_novidades+'</div>':'')+'</div>';
 
   // 2. BOp rondadas
   if((rel.bop_rondas||[]).length){
@@ -1295,10 +1273,8 @@ async function reabrirRascunho(id){
     // Preencher dados gerais
     const campos = {
       'data-r': rel.data_ronda, 'sel-opm': rel.opm, 'sel-pel': rel.pelotao,
-      'sel-of': rel.oficial, 'mot-nome': rel.motorista_nome, 'mot-re': rel.motorista_re,
-      'mot-tipo': rel.motorista_tipo_sang, 'h-ini': rel.h_inicio, 'h-fim': rel.h_termino,
-      'ppri': rel.ppri, 'vtr-num': rel.vtr_principal, 'km-i': rel.km_inicial,
-      'km-f': rel.km_final, 'dispensa': rel.dispensa, 'obs-nov': rel.obs_novidades,
+      'sel-of': rel.oficial, 'h-ini': rel.h_inicio, 'h-fim': rel.h_termino,
+      'obs-nov': rel.obs_novidades,
       // email removido
     };
     Object.entries(campos).forEach(([id, val]) => {
