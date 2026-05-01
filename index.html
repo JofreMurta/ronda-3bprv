@@ -5,23 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Livro de Ronda Digital — 3º BPRv</title>
 
-<!-- Firebase SDK via importmap -->
-<script type="importmap">
-{
-  "imports": {
-    "firebase/app": "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js",
-    "firebase/firestore": "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js"
-  }
-}
-</script>
-<script type="module">
-import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, addDoc, getDocs, doc, deleteDoc, setDoc, getDoc, updateDoc, query, where, orderBy, serverTimestamp }
-  from 'firebase/firestore';
-
+<!-- Firebase SDK (compat — escopo global) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script>
 // ── CONFIGURAÇÃO FIREBASE ─────────────────────────
-// Substitua com os dados do seu projeto Firebase
-// Console Firebase → Configurações do projeto → Seus apps → SDK
 const firebaseConfig = {
   apiKey:            "AIzaSyCNrhC9tfS-qzEnj22mAA0VMULeP3abk70",
   authDomain:        "passagemserv3bprv.firebaseapp.com",
@@ -35,7 +23,6 @@ let db = null;
 let fbOk = false;
 
 function atualizarStatusFb(texto, cor) {
-  // Aguarda o DOM estar pronto antes de atualizar
   const atualizar = () => {
     ['fb-status','fb-status-cfg'].forEach(id => {
       const el = document.getElementById(id);
@@ -50,8 +37,8 @@ function atualizarStatusFb(texto, cor) {
 }
 
 try {
-  const app = initializeApp(firebaseConfig);
-  db = getFirestore(app);
+  firebase.initializeApp(firebaseConfig);
+  db = firebase.firestore();
   fbOk = true;
   atualizarStatusFb('✓ Firebase conectado', '#3B6D11');
 } catch(e) {
@@ -59,242 +46,30 @@ try {
   atualizarStatusFb('✗ Erro: ' + e.message, '#A32D2D');
 }
 
-// ── SALVAR NO FIRESTORE ───────────────────────────
-window.salvarFirestore = async function(dados) {
-  if (!fbOk) return null;
-  try {
-    // 1. Salvar relatório principal
-    const relRef = await addDoc(collection(db, 'relatorios'), {
-      ...dados.relatorio,
-      status: dados.status,
-      created_at: serverTimestamp(),
-      qtd_bops: dados.bop_rondas.length,
-      qtd_vtrs: dados.viaturas.length
-    });
-    const relId = relRef.id;
-
-    // 2. Salvar BOp rondadas
-    for (const bop of dados.bop_rondas) {
-      const { integrantes: bopInts, ...bopData } = bop;
-      const bopRef = await addDoc(collection(db, 'bop_rondas'), {
-        relatorio_id: relId,
-        ...bopData
-      });
-      for (const int of (bopInts || [])) {
-        const { items, ...intBase } = int;
-        await addDoc(collection(db, 'bop_integrantes'), {
-          bop_ronda_id: bopRef.id,
-          relatorio_id: relId,
-          ...intBase,
-          items: (items || []).map(i => ({ item: i.item, estado: i.estado ?? 0 }))
-        });
-      }
-    }
-
-    // 3. Salvar viaturas
-    for (const vtr of dados.viaturas) {
-      const { integrantes: vtrInts, ...vtrData } = vtr;
-      const vtrRef = await addDoc(collection(db, 'viaturas'), {
-        relatorio_id: relId,
-        ...vtrData
-      });
-      for (const int of (vtrInts || [])) {
-        const { items, ...intBase } = int;
-        await addDoc(collection(db, 'vtr_integrantes'), {
-          viatura_id: vtrRef.id,
-          relatorio_id: relId,
-          ...intBase,
-          items: (items || []).map(i => ({ item: i.item, estado: i.estado ?? 0 }))
-        });
-      }
-    }
-
-    return relId;
-  } catch(e) {
-    throw new Error('Firestore: ' + e.message);
-  }
+// Aliases para manter compatibilidade com o código existente
+const serverTimestamp = () => firebase.firestore.FieldValue.serverTimestamp();
+const collection = (db, col) => db.collection(col);
+const addDoc = (ref, data) => ref.add(data).then(d => d);
+const getDocs = (q) => q.get();
+const doc = (db, col, id) => db.collection(col).doc(id);
+const deleteDoc = (ref) => ref.delete();
+const setDoc = (ref, data) => ref.set(data);
+const getDoc = (ref) => ref.get();
+const updateDoc = (ref, data) => ref.update(data);
+const query = (ref, ...constraints) => {
+  let q = ref;
+  constraints.forEach(c => { q = c(q); });
+  return q;
 };
+const where = (field, op, val) => (q) => q.where(field, op, val);
+const orderBy = (field, dir='asc') => (q) => q.orderBy(field, dir);
 
-// ── ATUALIZAR RASCUNHO NO FIRESTORE ──────────────
-window.atualizarRascunho = async function(id, dados) {
-  if (!fbOk) return false;
-  try {
-    // Atualizar relatório principal
-    const { integrantes: _i, ...relData } = dados.relatorio;
-    await updateDoc(doc(db, 'relatorios', id), {
-      ...relData,
-      status: 'rascunho',
-      qtd_bops: dados.bop_rondas.length,
-      qtd_vtrs: dados.viaturas.length,
-      updated_at: serverTimestamp()
-    });
-
-    // Excluir BOp e integrantes antigos e recriar
-    const bopSnap = await getDocs(query(collection(db, 'bop_rondas'), where('relatorio_id','==',id)));
-    for (const b of bopSnap.docs) {
-      const intSnap = await getDocs(query(collection(db, 'bop_integrantes'), where('bop_ronda_id','==',b.id)));
-      for (const i of intSnap.docs) await deleteDoc(doc(db, 'bop_integrantes', i.id));
-      await deleteDoc(doc(db, 'bop_rondas', b.id));
-    }
-    const vtrSnap = await getDocs(query(collection(db, 'viaturas'), where('relatorio_id','==',id)));
-    for (const v of vtrSnap.docs) {
-      const intSnap = await getDocs(query(collection(db, 'vtr_integrantes'), where('viatura_id','==',v.id)));
-      for (const i of intSnap.docs) await deleteDoc(doc(db, 'vtr_integrantes', i.id));
-      await deleteDoc(doc(db, 'viaturas', v.id));
-    }
-
-    // Recriar BOp
-    for (const bop of dados.bop_rondas) {
-      const { integrantes: bopInts, ...bopData } = bop;
-      const bopRef = await addDoc(collection(db, 'bop_rondas'), { relatorio_id: id, ...bopData });
-      for (const int of (bopInts || [])) {
-        const { items, ...intBase } = int;
-        await addDoc(collection(db, 'bop_integrantes'), {
-          bop_ronda_id: bopRef.id, relatorio_id: id, ...intBase,
-          items: (items||[]).map(i=>({ item:i.item, estado:i.estado??0 }))
-        });
-      }
-    }
-
-    // Recriar viaturas
-    for (const vtr of dados.viaturas) {
-      const { integrantes: vtrInts, ...vtrData } = vtr;
-      const vtrRef = await addDoc(collection(db, 'viaturas'), { relatorio_id: id, ...vtrData });
-      for (const int of (vtrInts || [])) {
-        const { items, ...intBase } = int;
-        await addDoc(collection(db, 'vtr_integrantes'), {
-          viatura_id: vtrRef.id, relatorio_id: id, ...intBase,
-          items: (items||[]).map(i=>({ item:i.item, estado:i.estado??0 }))
-        });
-      }
-    }
-
-    return true;
-  } catch(e) {
-    throw new Error('Firestore: ' + e.message);
-  }
-};
-
-// ── BUSCAR DO FIRESTORE ───────────────────────────
-window.buscarFirestore = async function(filtros) {
-  if (!fbOk) return null;
-  try {
-    let q = collection(db, 'relatorios');
-    const snap = await getDocs(query(q, orderBy('created_at', 'desc')));
-    let lista = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-
-    if (filtros.opm)   lista = lista.filter(r => r.opm && r.opm.toLowerCase().includes(filtros.opm.toLowerCase()));
-    if (filtros.of)    lista = lista.filter(r => r.oficial && r.oficial.toLowerCase().includes(filtros.of.toLowerCase()));
-    if (filtros.di)    lista = lista.filter(r => r.data_ronda && r.data_ronda >= filtros.di);
-    if (filtros.df)    lista = lista.filter(r => r.data_ronda && r.data_ronda <= filtros.df);
-
-    return lista;
-  } catch(e) {
-    throw new Error('Firestore: ' + e.message);
-  }
-};
-
-// ── EXCLUIR DO FIRESTORE ──────────────────────────
-window.excluirFirestore = async function(id) {
-  if (!fbOk) return;
-  await deleteDoc(doc(db, 'relatorios', id));
-};
-
-// ── CARREGAR RELATÓRIO COMPLETO DO FIRESTORE ──────
-window.carregarRelatorioCompleto = async function(id) {
-  if (!fbOk) return null;
-  try {
-    // Relatório principal
-    const relSnap = await getDoc(doc(db, 'relatorios', id));
-    if (!relSnap.exists()) return null;
-    const rel = { id: relSnap.id, ...relSnap.data() };
-
-    // BOp rondadas
-    const bopSnap = await getDocs(query(collection(db, 'bop_rondas'), where('relatorio_id', '==', id)));
-    rel.bop_rondas = [];
-    for (const b of bopSnap.docs) {
-      const bop = { id: b.id, ...b.data() };
-      const intSnap = await getDocs(query(collection(db, 'bop_integrantes'), where('bop_ronda_id', '==', b.id)));
-      bop.integrantes = intSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-      rel.bop_rondas.push(bop);
-    }
-
-    // Viaturas
-    const vtrSnap = await getDocs(query(collection(db, 'viaturas'), where('relatorio_id', '==', id)));
-    rel.viaturas = [];
-    for (const v of vtrSnap.docs) {
-      const vtr = { id: v.id, ...v.data() };
-      const intSnap = await getDocs(query(collection(db, 'vtr_integrantes'), where('viatura_id', '==', v.id)));
-      vtr.integrantes = intSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-      rel.viaturas.push(vtr);
-    }
-
-    return rel;
-  } catch(e) {
-    throw new Error('Firestore: ' + e.message);
-  }
-};
-
-// ── SALVAR CONFIGURAÇÕES NO FIRESTORE ─────────────
-window.salvarConfigFirestore = async function(key, arr) {
-  if (!fbOk) return;
-  try {
-    await setDoc(doc(db, 'configuracoes', key), { itens: arr, updated_at: serverTimestamp() });
-  } catch(e) { console.warn('Erro ao salvar config:', e.message); }
-};
-
-// ── CARREGAR CONFIGURAÇÕES DO FIRESTORE ────────────
-window.carregarConfigFirestore = async function() {
-  if (!fbOk) return null;
-  try {
-    const keys = ['opm','pel','bop','of','cc'];
-    const result = {};
-    for (const key of keys) {
-      const snap = await getDoc(doc(db, 'configuracoes', key));
-      if (snap.exists()) {
-        const data = snap.data();
-        // Suporta tanto campo 'itens' quanto campos diretos (arrays)
-        const arr = data.itens || data.valores || data.lista || null;
-        if (arr && Array.isArray(arr)) {
-          result[key] = arr;
-        } else {
-          // Tentar pegar qualquer campo que seja array
-          const campos = Object.values(data).filter(v => Array.isArray(v));
-          if (campos.length > 0) result[key] = campos[0];
-        }
-        console.log('Config carregada:', key, result[key]);
-      } else {
-        console.log('Config não encontrada no Firebase:', key);
-      }
-    }
-    return result;
-  } catch(e) {
-    console.warn('Erro ao carregar config:', e.message);
-    return null;
-  }
-};
-
-// ── DIAGNÓSTICO — ler configurações brutas do Firebase ──
-window.diagnosticarConfig = async function() {
-  if (!fbOk) { alert('Firebase não conectado.'); return; }
-  try {
-    const keys = ['opm','pel','bop','of','cc'];
-    let msg = 'Dados encontrados no Firebase:\n\n';
-    for (const key of keys) {
-      const snap = await getDoc(doc(db, 'configuracoes', key));
-      if (snap.exists()) {
-        const data = snap.data();
-        const campos = Object.keys(data).filter(k => k !== 'updated_at');
-        msg += key.toUpperCase() + ': ' + campos.map(c => {
-          const v = data[c];
-          return Array.isArray(v) ? c + '=[' + v.length + ' itens]' : c + '=' + JSON.stringify(v).slice(0,30);
-        }).join(', ') + '\n';
-      } else {
-        msg += key.toUpperCase() + ': NÃO ENCONTRADO\n';
-      }
-    }
-    alert(msg);
-  } catch(e) { alert('Erro: ' + e.message); }
+// Wrapper getDocs retorna objeto com .docs
+const _getDocs = getDocs;
+window._compat_getDocs = async function(q) {
+  const snap = await (typeof q.get === 'function' ? q.get() : q);
+  snap.docs = snap.docs || [];
+  return snap;
 };
 </script>
 
@@ -612,7 +387,7 @@ body{font-family:'Barlow',sans-serif;font-size:14px;background:var(--s2);color:v
       </div>
       <div style="font-size:11px;color:var(--tx3);margin-bottom:12px">Projeto: passagemserv3bprv · southamerica-east1</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn-add" id="btn-diag" onclick="chamarFb('diagnosticarConfig')" style="font-size:12px;padding:6px 12px">🔍 Diagnosticar dados</button>
+        <button class="btn-add" id="btn-diag" onclick="diagnosticarConfig()" style="font-size:12px;padding:6px 12px">🔍 Diagnosticar dados</button>
         <button class="btn-add" onclick="restaurarPadroes()" style="font-size:12px;padding:6px 12px;color:var(--amber);border-color:var(--amber)">↺ Restaurar padrões de fábrica</button>
       </div>
     </div>
@@ -666,6 +441,213 @@ body{font-family:'Barlow',sans-serif;font-size:14px;background:var(--s2);color:v
 </div><!-- /container -->
 
 <script>
+
+// ════════════════════════════════════════════════
+// FUNÇÕES FIREBASE (compat SDK — escopo global)
+// ════════════════════════════════════════════════
+
+// ── SALVAR RELATÓRIO ─────────────────────────────
+async function salvarFirestore(dados) {
+  if (!fbOk) return null;
+  try {
+    const relRef = await db.collection('relatorios').add({
+      ...dados.relatorio,
+      status: dados.status,
+      created_at: firebase.firestore.FieldValue.serverTimestamp(),
+      qtd_bops: dados.bop_rondas.length,
+      qtd_vtrs: dados.viaturas.length
+    });
+    const relId = relRef.id;
+
+    for (const bop of dados.bop_rondas) {
+      const { integrantes: bopInts, ...bopData } = bop;
+      const bopRef = await db.collection('bop_rondas').add({ relatorio_id: relId, ...bopData });
+      for (const int of (bopInts || [])) {
+        const { items, ...intBase } = int;
+        await db.collection('bop_integrantes').add({
+          bop_ronda_id: bopRef.id, relatorio_id: relId, ...intBase,
+          items: (items||[]).map(i=>({ item:i.item, estado:i.estado??0 }))
+        });
+      }
+    }
+    for (const vtr of dados.viaturas) {
+      const { integrantes: vtrInts, ...vtrData } = vtr;
+      const vtrRef = await db.collection('viaturas').add({ relatorio_id: relId, ...vtrData });
+      for (const int of (vtrInts || [])) {
+        const { items, ...intBase } = int;
+        await db.collection('vtr_integrantes').add({
+          viatura_id: vtrRef.id, relatorio_id: relId, ...intBase,
+          items: (items||[]).map(i=>({ item:i.item, estado:i.estado??0 }))
+        });
+      }
+    }
+    return relId;
+  } catch(e) { throw new Error('Firestore: ' + e.message); }
+}
+
+// ── ATUALIZAR RASCUNHO ────────────────────────────
+async function atualizarRascunho(id, dados) {
+  if (!fbOk) return false;
+  try {
+    const { integrantes: _i, ...relData } = dados.relatorio;
+    await db.collection('relatorios').doc(id).update({
+      ...relData, status: 'rascunho',
+      qtd_bops: dados.bop_rondas.length, qtd_vtrs: dados.viaturas.length,
+      updated_at: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    // Excluir subcoleções antigas
+    const bopSnap = await db.collection('bop_rondas').where('relatorio_id','==',id).get();
+    for (const b of bopSnap.docs) {
+      const intSnap = await db.collection('bop_integrantes').where('bop_ronda_id','==',b.id).get();
+      for (const i of intSnap.docs) await db.collection('bop_integrantes').doc(i.id).delete();
+      await db.collection('bop_rondas').doc(b.id).delete();
+    }
+    const vtrSnap = await db.collection('viaturas').where('relatorio_id','==',id).get();
+    for (const v of vtrSnap.docs) {
+      const intSnap = await db.collection('vtr_integrantes').where('viatura_id','==',v.id).get();
+      for (const i of intSnap.docs) await db.collection('vtr_integrantes').doc(i.id).delete();
+      await db.collection('viaturas').doc(v.id).delete();
+    }
+    // Recriar
+    for (const bop of dados.bop_rondas) {
+      const { integrantes: bopInts, ...bopData } = bop;
+      const bopRef = await db.collection('bop_rondas').add({ relatorio_id: id, ...bopData });
+      for (const int of (bopInts||[])) {
+        const { items, ...intBase } = int;
+        await db.collection('bop_integrantes').add({
+          bop_ronda_id: bopRef.id, relatorio_id: id, ...intBase,
+          items: (items||[]).map(i=>({ item:i.item, estado:i.estado??0 }))
+        });
+      }
+    }
+    for (const vtr of dados.viaturas) {
+      const { integrantes: vtrInts, ...vtrData } = vtr;
+      const vtrRef = await db.collection('viaturas').add({ relatorio_id: id, ...vtrData });
+      for (const int of (vtrInts||[])) {
+        const { items, ...intBase } = int;
+        await db.collection('vtr_integrantes').add({
+          viatura_id: vtrRef.id, relatorio_id: id, ...intBase,
+          items: (items||[]).map(i=>({ item:i.item, estado:i.estado??0 }))
+        });
+      }
+    }
+    return true;
+  } catch(e) { throw new Error('Firestore: ' + e.message); }
+}
+
+// ── BUSCAR RELATÓRIOS ─────────────────────────────
+async function buscarFirestore(filtros) {
+  if (!fbOk) return null;
+  try {
+    let snap = await db.collection('relatorios').orderBy('created_at','desc').get();
+    let lista = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    if (filtros.opm) lista = lista.filter(r => r.opm && r.opm.toLowerCase().includes(filtros.opm.toLowerCase()));
+    if (filtros.of)  lista = lista.filter(r => r.oficial && r.oficial.toLowerCase().includes(filtros.of.toLowerCase()));
+    if (filtros.di)  lista = lista.filter(r => r.data_ronda && r.data_ronda >= filtros.di);
+    if (filtros.df)  lista = lista.filter(r => r.data_ronda && r.data_ronda <= filtros.df);
+    return lista;
+  } catch(e) { throw new Error('Firestore: ' + e.message); }
+}
+
+// ── EXCLUIR RELATÓRIO ─────────────────────────────
+async function excluirFirestore(id) {
+  if (!fbOk) return;
+  await db.collection('relatorios').doc(id).delete();
+}
+
+// ── CARREGAR RELATÓRIO COMPLETO ───────────────────
+async function carregarRelatorioCompleto(id) {
+  if (!fbOk) return null;
+  try {
+    const relSnap = await db.collection('relatorios').doc(id).get();
+    if (!relSnap.exists) return null;
+    const rel = { id: relSnap.id, ...relSnap.data() };
+
+    const bopSnap = await db.collection('bop_rondas').where('relatorio_id','==',id).get();
+    rel.bop_rondas = [];
+    for (const b of bopSnap.docs) {
+      const bop = { id: b.id, ...b.data() };
+      const intSnap = await db.collection('bop_integrantes').where('bop_ronda_id','==',b.id).get();
+      bop.integrantes = intSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      rel.bop_rondas.push(bop);
+    }
+    const vtrSnap = await db.collection('viaturas').where('relatorio_id','==',id).get();
+    rel.viaturas = [];
+    for (const v of vtrSnap.docs) {
+      const vtr = { id: v.id, ...v.data() };
+      const intSnap = await db.collection('vtr_integrantes').where('viatura_id','==',v.id).get();
+      vtr.integrantes = intSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      rel.viaturas.push(vtr);
+    }
+    return rel;
+  } catch(e) { throw new Error('Firestore: ' + e.message); }
+}
+
+// ── SALVAR CONFIG ─────────────────────────────────
+async function salvarConfigFirestore(key, arr) {
+  if (!fbOk) return;
+  try {
+    await db.collection('configuracoes').doc(key).set({
+      itens: arr,
+      updated_at: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  } catch(e) { console.warn('Erro ao salvar config:', e.message); }
+}
+
+// ── CARREGAR CONFIG ───────────────────────────────
+async function carregarConfigFirestore() {
+  if (!fbOk) return null;
+  try {
+    const keys = ['opm','pel','bop','of','cc'];
+    const result = {};
+    for (const key of keys) {
+      const snap = await db.collection('configuracoes').doc(key).get();
+      if (snap.exists) {
+        const data = snap.data();
+        const arr = data.itens || data.valores || data.lista || null;
+        if (arr && Array.isArray(arr)) {
+          result[key] = arr;
+        } else {
+          const campos = Object.values(data).filter(v => Array.isArray(v));
+          if (campos.length > 0) result[key] = campos[0];
+        }
+        console.log('Config Firebase [' + key + ']:', result[key]);
+      } else {
+        console.log('Config não encontrada [' + key + ']');
+      }
+    }
+    return result;
+  } catch(e) {
+    console.warn('Erro ao carregar config:', e.message);
+    return null;
+  }
+}
+
+// ── DIAGNÓSTICO ───────────────────────────────────
+async function diagnosticarConfig() {
+  if (!fbOk) { alert('Firebase não conectado.'); return; }
+  try {
+    const keys = ['opm','pel','bop','of','cc'];
+    let msg = 'Dados no Firebase:\n\n';
+    for (const key of keys) {
+      const snap = await db.collection('configuracoes').doc(key).get();
+      if (snap.exists) {
+        const data = snap.data();
+        const campos = Object.keys(data).filter(k => k !== 'updated_at');
+        msg += key.toUpperCase() + ': ';
+        campos.forEach(c => {
+          const v = data[c];
+          msg += Array.isArray(v) ? c + '=[' + v.length + ' itens] ' : c + '=' + JSON.stringify(v).slice(0,30) + ' ';
+        });
+        msg += '\n';
+      } else {
+        msg += key.toUpperCase() + ': NÃO ENCONTRADO\n';
+      }
+    }
+    alert(msg);
+  } catch(e) { alert('Erro: ' + e.message); }
+}
+
 // ── DADOS ──────────────────────────────────────────
 // Listas editáveis — valores padrão
 // Valores iniciais vazios — tudo vem do Firebase
@@ -678,7 +660,7 @@ let CC   = [];
 // Salva no Firebase e atualiza a lista local
 async function saveList(key, arr) {
   LISTA_MAP[key].setLocal(arr);
-  await window.salvarConfigFirestore(key, arr);
+  await salvarConfigFirestore(key, arr);
 }
 
 // Padrões de fábrica — usados APENAS se o Firebase não tiver nada cadastrado ainda
@@ -693,7 +675,7 @@ const FABRICA = {
 // Carrega configurações do Firebase ao iniciar
 // Se uma lista ainda não existir no Firebase, grava os padrões de fábrica automaticamente
 async function carregarConfigs() {
-  const cfg = await window.carregarConfigFirestore();
+  const cfg = await carregarConfigFirestore();
 
   // Sem Firebase — usar padrões locais temporariamente
   if (!cfg) {
@@ -718,7 +700,7 @@ async function carregarConfigs() {
       // Primeira execução: gravar padrões de fábrica como objetos {valor, ativo}
       const fab = FABRICA[key].map(v => ({valor:v, ativo:true}));
       LISTA_MAP[key].setLocal(fab);
-      await window.salvarConfigFirestore(key, fab);
+      await salvarConfigFirestore(key, fab);
     }
   }
 
@@ -1011,13 +993,13 @@ async function salvar(status){
 
     if(status === 'rascunho' && rascunhoAtualId) {
       // Atualizar rascunho existente
-      await window.atualizarRascunho(rascunhoAtualId, dados);
+      await atualizarRascunho(rascunhoAtualId, dados);
       id = rascunhoAtualId;
       okEl.textContent = `Rascunho atualizado com sucesso!`;
       okEl.style.display = 'block';
     } else {
       // Criar novo documento
-      id = await window.salvarFirestore(dados);
+      id = await salvarFirestore(dados);
       if(id) {
         if(status === 'rascunho') {
           // Guardar ID para atualizações subsequentes
@@ -1029,7 +1011,7 @@ async function salvar(status){
           const idParaExcluir = rascunhoOrigemId || rascunhoAtualId;
           if(idParaExcluir) {
             try {
-              await window.excluirFirestore(idParaExcluir);
+              await excluirFirestore(idParaExcluir);
               rascunhoOrigemId = null;
               rascunhoAtualId = null;
               okEl.textContent = `Relatório finalizado e salvo! Rascunho excluído automaticamente.`;
@@ -1065,7 +1047,7 @@ async function buscar(){
 
   try{
     const filtros={opm:gv('f-opm'),of:gv('f-of'),di:gv('f-di'),df:gv('f-df')};
-    let lista=await window.buscarFirestore(filtros);
+    let lista=await buscarFirestore(filtros);
 
     if(lista===null){
       // Firebase não configurado — usar dados locais
@@ -1105,7 +1087,7 @@ async function buscar(){
 async function excluir(id){
   if(!confirm('Confirma a exclusão?'))return;
   try{
-    await window.excluirFirestore(id);
+    await excluirFirestore(id);
     savedRels=savedRels.filter(r=>r.id!==id);
     buscar();
   } catch(err){alert('Erro ao excluir: '+err.message);}
@@ -1119,7 +1101,7 @@ function hideModal(){ document.getElementById('modal-loading').classList.remove(
 async function gerarPDF(id){
   showModal('Carregando relatório...');
   try{
-    const rel = await window.carregarRelatorioCompleto(id);
+    const rel = await carregarRelatorioCompleto(id);
     if(!rel){ hideModal(); alert('Relatório não encontrado.'); return; }
     hideModal();
     const area = document.getElementById('pdf-area');
@@ -1212,7 +1194,7 @@ function buildPDFHtml(rel){
 async function reabrirRascunho(id){
   showModal('Carregando rascunho...');
   try{
-    const rel = await window.carregarRelatorioCompleto(id);
+    const rel = await carregarRelatorioCompleto(id);
     if(!rel){ hideModal(); alert('Relatório não encontrado.'); return; }
 
     // Navegar para formulário
@@ -1426,25 +1408,10 @@ async function init(){
   document.getElementById('data-r').value=new Date().toISOString().slice(0,10);
   // Carregar listas do Firebase
   await carregarConfigs();
-  // Sinalizar que o módulo Firebase está pronto
-  window._fbPronto = true;
-  window.dispatchEvent(new Event('fb-pronto'));
+
 }
 init();
 </script>
 
-<script>
-// Helper para chamar funções do módulo Firebase com segurança
-function chamarFb(fn, ...args) {
-  if (window._fbPronto && typeof window[fn] === 'function') {
-    window[fn](...args);
-  } else {
-    window.addEventListener('fb-pronto', () => {
-      if (typeof window[fn] === 'function') window[fn](...args);
-      else alert('Função não disponível: ' + fn);
-    }, { once: true });
-  }
-}
-</script>
 </body>
 </html>
