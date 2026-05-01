@@ -1117,98 +1117,118 @@ async function gerarPDF(id){
     const rel = await carregarRelatorioCompleto(id);
     if(!rel){ hideModal(); alert('Relatório não encontrado.'); return; }
     hideModal();
-    const area = document.getElementById('pdf-area');
-    area.innerHTML = buildPDFHtml(rel);
-    area.style.display = 'block';
-    document.body.classList.add('imprimindo');
-    setTimeout(()=>{
-      window.print();
-      setTimeout(()=>{
-        area.style.display = 'none';
-        document.body.classList.remove('imprimindo');
-      }, 1000);
-    }, 500);
+
+    // Abrir nova janela com o relatório completo e imprimir
+    const html = buildPDFHtml(rel);
+    const janela = window.open('', '_blank', 'width=900,height=700');
+    janela.document.open();
+    janela.document.write(html);
+    janela.document.close();
+    janela.focus();
+    setTimeout(() => { janela.print(); }, 800);
   } catch(e){ hideModal(); alert('Erro ao gerar PDF: '+e.message); }
 }
 
 function buildPDFHtml(rel){
   const fmt = d => d ? new Date(d+'T00:00:00').toLocaleDateString('pt-BR') : '—';
-  const estadoLabel = e => e===1 ? '✓ Correto' : e===2 ? '✗ Incorreção' : null;
+
+  const CSS = `
+    body{font-family:Arial,sans-serif;font-size:9.5pt;color:#000;margin:15mm;line-height:1.5}
+    h2{font-size:14pt;font-weight:bold;margin:0 0 3px}
+    h3{font-size:10pt;font-weight:bold;border-bottom:1px solid #ccc;padding-bottom:4px;margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px;color:#1a3a5c}
+    h4{font-size:9pt;font-weight:bold;margin:0 0 5px;color:#1a3a5c}
+    .hdr{background:#1a3a5c;color:#fff;padding:12px 16px;border-radius:6px 6px 0 0;-webkit-print-color-adjust:exact;print-color-adjust:exact;margin-bottom:0}
+    .hdr p{font-size:9pt;opacity:.8;margin:0}
+    .sec{border:1px solid #ccc;padding:10px 14px;margin-bottom:10px;border-radius:4px;page-break-inside:avoid}
+    .kv{display:grid;grid-template-columns:160px 1fr;gap:3px 10px;font-size:9pt}
+    .kv span:first-child{color:#555}
+    .kv span:last-child{font-weight:bold}
+    .member{border:1px solid #ddd;border-radius:4px;padding:8px 10px;margin-bottom:7px;page-break-inside:avoid}
+    .ok{font-size:8.5pt;color:#27500A;margin-bottom:2px}
+    .nok{font-size:8.5pt;color:#A32D2D;margin-bottom:2px}
+    .obs{font-size:8.5pt;color:#444;margin-top:4px}
+    .log{background:#f5f6fa;border-radius:4px;padding:7px 10px;margin-top:7px}
+    .bop-hdr{background:#1a3a5c;color:#fff;padding:5px 10px;font-weight:bold;font-size:9.5pt;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .vtr-hdr{background:#0F6E56;color:#fff;padding:5px 10px;font-weight:bold;font-size:9.5pt;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .bloco{margin-bottom:10px;border:1px solid #ddd;border-radius:4px;overflow:hidden;page-break-inside:avoid}
+    .bloco-body{padding:8px 10px}
+    .footer{text-align:center;font-size:8pt;color:#999;margin-top:16px;border-top:1px solid #ddd;padding-top:8px}
+    @media print{body{margin:10mm}}
+  `;
 
   function renderMembro(m, idx){
-    const papelLabel = m.papel==='enc' ? 'Encarregado' : m.papel==='mot' ? 'Motorista' : `Auxiliar ${idx}`;
+    const papelLabel = m.papel==='enc' ? 'Encarregado' : m.papel==='mot' ? 'Motorista' : 'Auxiliar '+idx;
     const ok  = (m.items||[]).filter(i=>i.estado===1).map(i=>i.item);
     const nok = (m.items||[]).filter(i=>i.estado===2).map(i=>i.item);
-    return `<div class="pdf-member">
-      <h4>${papelLabel}: ${m.nome||'—'} | RE: ${m.re||'—'} | Arma: ${m.arma_num||'—'} | Colete: ${m.colete_num||'—'} | Tipo sang.: ${m.tipo_sang||'—'}</h4>
-      ${ok.length  ? `<div class="pdf-items-ok"><b>✓ Correto:</b> ${ok.join(' · ')}</div>` : ''}
-      ${nok.length ? `<div class="pdf-items-nok"><b>✗ Incorreções:</b> ${nok.join(' · ')}</div>` : ''}
-      ${m.observacoes ? `<div class="pdf-obs"><b>Obs.:</b> ${m.observacoes}</div>` : ''}
-    </div>`;
+    return '<div class="member">'
+      +'<h4>'+papelLabel+': '+(m.nome||'—')+' | RE: '+(m.re||'—')+' | Arma: '+(m.arma_num||'—')+' | Colete: '+(m.colete_num||'—')+' | Tipo sang.: '+(m.tipo_sang||'—')+'</h4>'
+      +(ok.length  ? '<div class="ok"><b>✓ Correto:</b> '+ok.join(' · ')+'</div>' : '')
+      +(nok.length ? '<div class="nok"><b>✗ Incorreções:</b> '+nok.join(' · ')+'</div>' : '')
+      +(m.observacoes ? '<div class="obs"><b>Obs.:</b> '+m.observacoes+'</div>' : '')
+      +'</div>';
   }
 
-  let html = `<div class="pdf-header">
-    <h2>Relatório de Ronda — Cmdt de Pelotão Rodoviário</h2>
-    <p>Governo do Estado de São Paulo · Polícia Militar · 3º BPRv · OS Nº 3BPRv-039/03/2023 · NI CPRv-004/300/23</p>
-  </div>`;
+  let body = '<div class="hdr"><h2>Relatório de Ronda — Cmdt de Pelotão Rodoviário</h2>'
+    +'<p>Governo do Estado de São Paulo · Polícia Militar · 3º BPRv · OS Nº 3BPRv-039/03/2023 · NI CPRv-004/300/23</p></div>';
 
-  // Dados gerais
-  html += `<div class="pdf-section"><h3>1. Dados da Ronda</h3><div class="pdf-kv">
-    <span>OPM</span><span>${rel.opm||'—'}</span>
-    <span>Pelotão</span><span>${rel.pelotao||'—'}</span>
-    <span>Oficial responsável</span><span>${rel.oficial||'—'}</span>
-    <span>Motorista</span><span>${rel.motorista_nome||'—'} · RE: ${rel.motorista_re||'—'} · Tipo sang.: ${rel.motorista_tipo_sang||'—'}</span>
-    <span>Data</span><span>${fmt(rel.data_ronda)}</span>
-    <span>Início / Término</span><span>${rel.h_inicio||'—'} / ${rel.h_termino||'—'}</span>
-    <span>Viatura principal</span><span>${rel.vtr_principal||'—'}</span>
-    <span>KM inicial / final</span><span>${rel.km_inicial||'—'} / ${rel.km_final||'—'}</span>
-    <span>PPRI</span><span>${rel.ppri||'—'}</span>
-    <span>Dispensa subseq.</span><span>${rel.dispensa||'—'}</span>
-  </div>${rel.obs_novidades?`<div style="margin-top:8px;font-size:9pt"><b>Outras novidades:</b> ${rel.obs_novidades}</div>`:''}</div>`;
 
-  // BOp rondadas
+  // 1. Dados gerais
+  body += '<div class="sec"><h3>1. Dados da Ronda</h3><div class="kv">'
+    +'<span>OPM</span><span>'+(rel.opm||'—')+'</span>'
+    +'<span>Pelotão</span><span>'+(rel.pelotao||'—')+'</span>'
+    +'<span>Oficial responsável</span><span>'+(rel.oficial||'—')+'</span>'
+    +'<span>Motorista</span><span>'+(rel.motorista_nome||'—')+' · RE: '+(rel.motorista_re||'—')+' · Tipo sang.: '+(rel.motorista_tipo_sang||'—')+'</span>'
+    +'<span>Data</span><span>'+fmt(rel.data_ronda)+'</span>'
+    +'<span>Início / Término</span><span>'+(rel.h_inicio||'—')+' / '+(rel.h_termino||'—')+'</span>'
+    +'<span>Viatura principal</span><span>'+(rel.vtr_principal||'—')+'</span>'
+    +'<span>KM inicial / final</span><span>'+(rel.km_inicial||'—')+' / '+(rel.km_final||'—')+'</span>'
+    +'<span>PPRI</span><span>'+(rel.ppri||'—')+'</span>'
+    +'<span>Dispensa subseq.</span><span>'+(rel.dispensa||'—')+'</span>'
+    +'</div>'+(rel.obs_novidades?'<div style="margin-top:8px;font-size:9pt"><b>Outras novidades:</b> '+rel.obs_novidades+'</div>':'')+'</div>';
+
+  // 2. BOp rondadas
   if((rel.bop_rondas||[]).length){
-    html += `<div class="pdf-section"><h3>2. BOp / Sedes Rondadas</h3>`;
+    body += '<div class="sec"><h3>2. BOp / Sedes Rondadas</h3>';
     rel.bop_rondas.forEach((bop,i)=>{
       let auxN=0;
-      html += `<div style="margin-bottom:10px;border:1px solid #ddd;border-radius:4px;overflow:hidden">
-        <div class="pdf-bop-hdr">Ronda ${i+1} — ${bop.bop} · Horário: ${bop.horario||'—'} · SP/Km: ${bop.sp_km||'—'}</div>
-        <div style="padding:8px 10px">`;
-      (bop.integrantes||[]).forEach(m=>{ if(m.papel==='aux')auxN++; html+=renderMembro(m,auxN); });
+      body += '<div class="bloco"><div class="bop-hdr">Ronda '+(i+1)+' — '+bop.bop+' · Horário: '+(bop.horario||'—')+' · SP/Km: '+(bop.sp_km||'—')+'</div><div class="bloco-body">';
+      (bop.integrantes||[]).forEach(m=>{ if(m.papel==='aux')auxN++; body+=renderMembro(m,auxN); });
       const logOk  = (bop.log_items||[]).filter(i=>i.estado===1).map(i=>i.item);
       const logNok = (bop.log_items||[]).filter(i=>i.estado===2).map(i=>i.item);
       if(logOk.length||logNok.length||bop.obs_logistica){
-        html+=`<div class="pdf-log"><b style="font-size:9pt">Logística:</b>
-          ${logOk.length?`<div class="pdf-items-ok">✓ ${logOk.join(' · ')}</div>`:''}
-          ${logNok.length?`<div class="pdf-items-nok">✗ ${logNok.join(' · ')}</div>`:''}
-          ${bop.obs_logistica?`<div class="pdf-obs"><b>Obs.:</b> ${bop.obs_logistica}</div>`:''}
-        </div>`;
+        body+='<div class="log"><b style="font-size:9pt">Logística:</b>'
+          +(logOk.length?'<div class="ok">✓ '+logOk.join(' · ')+'</div>':'')
+          +(logNok.length?'<div class="nok">✗ '+logNok.join(' · ')+'</div>':'')
+          +(bop.obs_logistica?'<div class="obs"><b>Obs.:</b> '+bop.obs_logistica+'</div>':'')
+          +'</div>';
       }
-      if(bop.obs_geral) html+=`<div class="pdf-obs" style="margin-top:5px"><b>Obs. geral:</b> ${bop.obs_geral}</div>`;
-      html += `</div></div>`;
+      if(bop.obs_geral) body+='<div class="obs" style="margin-top:5px"><b>Obs. geral:</b> '+bop.obs_geral+'</div>';
+      body += '</div></div>';
     });
-    html += `</div>`;
+    body += '</div>';
   }
 
-  // Viaturas
+  // 3. Viaturas
   if((rel.viaturas||[]).length){
-    html += `<div class="pdf-section"><h3>3. Viaturas Rondadas</h3>`;
+    body += '<div class="sec"><h3>3. Viaturas Rondadas</h3>';
     rel.viaturas.forEach((vtr,i)=>{
       let auxN=0;
-      html += `<div style="margin-bottom:10px;border:1px solid #ddd;border-radius:4px;overflow:hidden">
-        <div class="pdf-vtr-hdr">Viatura ${i+1}: ${vtr.prefixo||'—'} · ${vtr.horario||'—'} · SP/Km: ${vtr.sp_km||'—'}</div>
-        <div style="padding:8px 10px">
-          <div style="font-size:9pt;margin-bottom:6px"><b>Odôm. ini/atual:</b> ${vtr.odo_inicial||'—'} / ${vtr.odo_atual||'—'} &nbsp;·&nbsp; <b>CPP:</b> ${vtr.cpp||'—'} &nbsp;·&nbsp; <b>Abast.:</b> ${vtr.abastecimento||'—'} &nbsp;·&nbsp; <b>Limpeza:</b> ${vtr.limpeza||'—'}</div>`;
-      (vtr.integrantes||[]).forEach(m=>{ if(m.papel==='aux')auxN++; html+=renderMembro(m,auxN); });
-      if(vtr.produtividade||vtr.boe_num) html+=`<div style="font-size:9pt;margin-top:4px"><b>Produtividade:</b> ${vtr.produtividade||'—'} &nbsp;·&nbsp; <b>BO-e Nº:</b> ${vtr.boe_num||'—'}</div>`;
-      if(vtr.obs_geral) html+=`<div class="pdf-obs" style="margin-top:4px"><b>Obs. geral:</b> ${vtr.obs_geral}</div>`;
-      html += `</div></div>`;
+      body += '<div class="bloco"><div class="vtr-hdr">Viatura '+(i+1)+': '+(vtr.prefixo||'—')+' · '+(vtr.horario||'—')+' · SP/Km: '+(vtr.sp_km||'—')+'</div><div class="bloco-body">'
+        +'<div style="font-size:9pt;margin-bottom:6px"><b>Odôm. ini/atual:</b> '+(vtr.odo_inicial||'—')+' / '+(vtr.odo_atual||'—')
+        +' &nbsp;·&nbsp; <b>CPP:</b> '+(vtr.cpp||'—')+' &nbsp;·&nbsp; <b>Abast.:</b> '+(vtr.abastecimento||'—')+' &nbsp;·&nbsp; <b>Limpeza:</b> '+(vtr.limpeza||'—')+'</div>';
+      (vtr.integrantes||[]).forEach(m=>{ if(m.papel==='aux')auxN++; body+=renderMembro(m,auxN); });
+      if(vtr.produtividade||vtr.boe_num) body+='<div style="font-size:9pt;margin-top:4px"><b>Produtividade:</b> '+(vtr.produtividade||'—')+' &nbsp;·&nbsp; <b>BO-e Nº:</b> '+(vtr.boe_num||'—')+'</div>';
+      if(vtr.obs_geral) body+='<div class="obs" style="margin-top:4px"><b>Obs. geral:</b> '+vtr.obs_geral+'</div>';
+      body += '</div></div>';
     });
-    html += `</div>`;
+    body += '</div>';
   }
 
-  html += `<div class="pdf-footer">Relatório gerado via Livro de Ronda Digital — 3º BPRv · ${new Date().toLocaleString('pt-BR')}</div>`;
-  return html;
+  body += '<div class="footer">Relatório gerado via Livro de Ronda Digital — 3º BPRv · '+new Date().toLocaleString('pt-BR')+'</div>';
+
+  return '<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">'
+    +'<title>Relatório de Ronda — '+(rel.oficial||'')+' — '+fmt(rel.data_ronda)+'</title>'
+    +'<style>'+CSS+'</style></head><body>'+body+'</body></html>';
 }
 
 // ── REABRIR RASCUNHO ────────────────────────────────
