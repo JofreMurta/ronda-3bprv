@@ -674,6 +674,17 @@ const FABRICA = {
 
 // Carrega configurações do Firebase ao iniciar
 // Se uma lista ainda não existir no Firebase, grava os padrões de fábrica automaticamente
+function normalizarItem(it){ return (typeof it==='string') ? {valor:it,ativo:true} : it; }
+function itensAtivos(arr){ return arr.map(normalizarItem).filter(i=>i.ativo).map(i=>i.valor); }
+
+const LISTA_MAP = {
+  opm:  { arr: ()=>OPM,  setLocal: v=>{ OPM=v;  }, set: async v=>{ OPM=v;  await saveList('opm',v); } },
+  pel:  { arr: ()=>PEL,  setLocal: v=>{ PEL=v;  }, set: async v=>{ PEL=v;  await saveList('pel',v); } },
+  bop:  { arr: ()=>BOPS, setLocal: v=>{ BOPS=v; }, set: async v=>{ BOPS=v; await saveList('bop',v); } },
+  of:   { arr: ()=>OF,   setLocal: v=>{ OF=v;   }, set: async v=>{ OF=v;   await saveList('of',v);  } },
+  cc:   { arr: ()=>CC,   setLocal: v=>{ CC=v;   }, set: async v=>{ CC=v;   await saveList('cc',v);  } },
+};
+
 async function carregarConfigs() {
   const cfg = await carregarConfigFirestore();
 
@@ -1332,16 +1343,7 @@ function renderSavedList(){
 // ── GERENCIADOR DE LISTAS ─────────────────────────
 // Cada item da lista: { valor: string, ativo: boolean }
 // Compatibilidade: se item for string simples, converte para objeto
-function normalizarItem(it){ return (typeof it==='string') ? {valor:it,ativo:true} : it; }
-function itensAtivos(arr){ return arr.map(normalizarItem).filter(i=>i.ativo).map(i=>i.valor); }
 
-const LISTA_MAP = {
-  opm:  { arr: ()=>OPM,  setLocal: v=>{ OPM=v;  }, set: async v=>{ OPM=v;  await saveList('opm',v); } },
-  pel:  { arr: ()=>PEL,  setLocal: v=>{ PEL=v;  }, set: async v=>{ PEL=v;  await saveList('pel',v); } },
-  bop:  { arr: ()=>BOPS, setLocal: v=>{ BOPS=v; }, set: async v=>{ BOPS=v; await saveList('bop',v); } },
-  of:   { arr: ()=>OF,   setLocal: v=>{ OF=v;   }, set: async v=>{ OF=v;   await saveList('of',v);  } },
-  cc:   { arr: ()=>CC,   setLocal: v=>{ CC=v;   }, set: async v=>{ CC=v;   await saveList('cc',v);  } },
-};
 
 function renderLM(key){
   const c=document.getElementById('lm-'+key);if(!c)return;
