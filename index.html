@@ -1197,7 +1197,10 @@ function buildPDFHtml(rel){
   `;
 
   function renderMembro(m, idx){
-    const papelLabel = m.papel==='enc' ? 'Encarregado' : m.papel==='mot' ? 'Motorista' : 'Auxiliar '+idx;
+    let papelLabel;
+    if(m.papel==='enc') papelLabel='Encarregado';
+    else if(m.papel==='mot') papelLabel='Motorista';
+    else papelLabel='Auxiliar '+idx;
     const ok  = (m.items||[]).filter(i=>i.estado===1).map(i=>i.item);
     const nok = (m.items||[]).filter(i=>i.estado===2).map(i=>i.item);
     return '<div class="member">'
@@ -1232,7 +1235,10 @@ function buildPDFHtml(rel){
     rel.bop_rondas.forEach((bop,i)=>{
       let auxN=0;
       body += '<div class="bloco"><div class="bop-hdr">Ronda '+(i+1)+' — '+bop.bop+' · Horário: '+(bop.horario||'—')+' · SP/Km: '+(bop.sp_km||'—')+'</div><div class="bloco-body">';
-      (bop.integrantes||[]).forEach(m=>{ if(m.papel==='aux')auxN++; body+=renderMembro(m,auxN); });
+      (bop.integrantes||[]).forEach(m=>{
+        const idx = m.papel==='aux' ? ++auxN : 0;
+        body+=renderMembro(m, idx);
+      });
       const logOk  = (bop.log_items||[]).filter(i=>i.estado===1).map(i=>i.item);
       const logNok = (bop.log_items||[]).filter(i=>i.estado===2).map(i=>i.item);
       if(logOk.length||logNok.length||bop.obs_logistica){
@@ -1256,7 +1262,10 @@ function buildPDFHtml(rel){
       body += '<div class="bloco"><div class="vtr-hdr">Viatura '+(i+1)+': '+(vtr.prefixo||'—')+' · '+(vtr.horario||'—')+' · SP/Km: '+(vtr.sp_km||'—')+'</div><div class="bloco-body">'
         +'<div style="font-size:9pt;margin-bottom:6px"><b>Odôm. ini/atual:</b> '+(vtr.odo_inicial||'—')+' / '+(vtr.odo_atual||'—')
         +' &nbsp;·&nbsp; <b>CPP:</b> '+(vtr.cpp||'—')+' &nbsp;·&nbsp; <b>Abast.:</b> '+(vtr.abastecimento||'—')+' &nbsp;·&nbsp; <b>Limpeza:</b> '+(vtr.limpeza||'—')+'</div>';
-      (vtr.integrantes||[]).forEach(m=>{ if(m.papel==='aux')auxN++; body+=renderMembro(m,auxN); });
+      (vtr.integrantes||[]).forEach(m=>{
+        const idx = m.papel==='aux' ? ++auxN : 0;
+        body+=renderMembro(m, idx);
+      });
       if(vtr.produtividade||vtr.boe_num) body+='<div style="font-size:9pt;margin-top:4px"><b>Produtividade:</b> '+(vtr.produtividade||'—')+' &nbsp;·&nbsp; <b>BO-e Nº:</b> '+(vtr.boe_num||'—')+'</div>';
       if(vtr.obs_geral) body+='<div class="obs" style="margin-top:4px"><b>Obs. geral:</b> '+vtr.obs_geral+'</div>';
       body += '</div></div>';
