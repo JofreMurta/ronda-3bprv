@@ -706,13 +706,16 @@ async function carregarConfigs() {
   refreshSelects();
   renderAllLM();
 }
+// Itens pessoal/operações — BOp/Sede (sem itens de viatura)
+const IT_T_BOP=['Apresentação pessoal e postura','Uniforme regulamentar e completo','Identidade funcional presente','Condições físicas e psíquicas aptas','Armamento de porte — número e condições','Colete balístico — número e condições','Telefone particular autorizado','Conferência com a escala de serviço'];
+// Itens pessoal/operações — Viatura (lista completa)
 const IT_T=['Apresentação pessoal e postura','Uniforme regulamentar e completo','Identidade funcional presente','CNH / documentação em ordem','Condições físicas e psíquicas aptas','Armamento de porte — número e condições','Colete balístico — número e condições','Telefone particular autorizado','Conferência com a escala de serviço','Atitude do policial em serviço','Operação de equipamentos verificada','Atendimento ao cidadão — qualidade'];
 const IT_ENC=['Preenchimento correto do controle (PPRI) e CPP','RSO Rv preenchido corretamente'];
-const IT_EB=['Livros e documentações da BOp preenchidos'];
+const IT_EB=['Livros e documentações da BOp / Sede preenchidos'];
 const IT_EV=['Sinalização de obra na malha viária conferida'];
 const IT_VO=['CPP correto / alterações justificadas','Lançamentos no PPRI conferidos','Ação em desenvolvimento adequada','Odômetro inicial e atual registrados','Abastecimento verificado'];
 const IT_VC=['Limpeza interna e externa da viatura','Sistema de iluminação operacional','Equipamentos (radar, etilômetro, etc.)','Manutenção 1º escalão em dia','Documentação da viatura presente','Cartão de estacionamento presente'];
-const IT_LOG=['Limpeza e conservação das dependências','Limpeza e conservação das viaturas estacionadas','Controle de estacionamento / cartão','Armamento e materiais bélicos verificados','Equipamentos de telemática e rádio'];
+const IT_LOG=['Limpeza e conservação das dependências','Iluminação interna e externa','Acesso ao público externo','Controle de estacionamento / cartão','Armamento e materiais bélicos verificados','Equipamentos de telemática e rádio'];
 
 let selBops=new Set(), mCtrl={}, vCount=0, vList=[], savedRels=[], rascunhoOrigemId=null, rascunhoAtualId=null;
 
@@ -817,10 +820,11 @@ function mkBtns(uid,itens,pfx){
   return `<div class="igrid">${itens.map((it,i)=>`<button type="button" class="ibtn" data-s="0" id="${uid}_${pfx}${i}" onclick="cycleItem(this)"><span class="idot"></span>${it}</button>`).join('')}</div>`;
 }
 function buildSecs(uid,papel,ctx){
-  let h=`<div class="isub">Pessoal e operações</div>${mkBtns(uid,IT_T,'t')}`;
+  const itensBase = ctx==='bop' ? IT_T_BOP : IT_T;
+  let h=`<div class="isub">Pessoal e operações</div>${mkBtns(uid,itensBase,'t')}`;
   if(papel==='enc'){
     h+=`<div class="isub" style="margin-top:9px">Documentação — encarregado</div>${mkBtns(uid,IT_ENC,'e')}`;
-    if(ctx==='bop')h+=`<div class="isub" style="margin-top:9px">Livros — BOp</div>${mkBtns(uid,IT_EB,'lb')}`;
+    if(ctx==='bop')h+=`<div class="isub" style="margin-top:9px">Livros — BOp / Sede</div>${mkBtns(uid,IT_EB,'lb')}`;
     if(ctx==='vtr')h+=`<div class="isub" style="margin-top:9px">Sinalização viária</div>${mkBtns(uid,IT_EV,'sv')}`;
   }
   if(ctx==='vtr'){
@@ -834,16 +838,15 @@ function memberHtml(uid,gradLabel,gradPh,mhCls,mlCls,lbl,papel,ctx){
     <div class="mhdr ${mhCls}"><span class="mlbl ${mlCls}">${lbl}</span><button class="btn-del" onclick="remMember('${uid}')">Remover</button></div>
     <div class="mbody">
       <div class="idstrip">
-        <div class="g4">
+        <div class="g${ctx==='bop'?3:4}">
           <div class="f sp2"><label>${gradLabel}</label><input type="text" class="m-nome" placeholder="${gradPh}"></div>
           <div class="f"><label>RE</label><input type="text" class="m-re" placeholder="RE 000000"></div>
-          <div class="f"><label>Tipo sanguíneo</label><input type="text" class="m-tipo" placeholder="O+"></div>
+          ${ctx==='vtr'?'<div class="f"><label>Tipo sanguíneo</label><input type="text" class="m-tipo" placeholder="O+"></div>':''}
         </div>
-        <div class="g4" style="margin-top:9px">
+        <div class="${ctx==='bop'?'g2':'g4'}" style="margin-top:9px">
           <div class="f"><label>Arma Nº</label><input type="text" class="m-arma"></div>
           <div class="f"><label>Colete Nº</label><input type="text" class="m-colete"></div>
-          <div class="f"><label>Armamento</label><select class="m-arm"><option>Da corporação</option><option>Particular</option></select></div>
-          <div class="f"><label>2ª arma?</label><select class="m-2a"><option value="nao">Não</option><option value="sim">Sim</option></select></div>
+          ${ctx==='vtr'?'<div class="f"><label>Armamento</label><select class="m-arm"><option>Da corporação</option><option>Particular</option></select></div><div class="f"><label>2ª arma?</label><select class="m-2a"><option value="nao">Não</option><option value="sim">Sim</option></select></div>':''}
         </div>
       </div>
       ${legendHtml()}${buildSecs(uid,papel,ctx)}
@@ -911,12 +914,12 @@ function renderBopBlocks(){
       </div>
       <div class="sep"></div>
       <div class="logbox">
-        <div class="logtitle">Logística — item 7</div>
+        <div class="logtitle">Logística</div>
         ${legendHtml()}
         <div class="igrid">${IT_LOG.map((it,i)=>`<button type="button" class="ibtn" data-s="0" id="log-${bid}-${i}" onclick="cycleItem(this)"><span class="idot"></span>${it}</button>`).join('')}</div>
         <div style="margin-top:9px">
-          <label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;color:var(--tx2)">Obs. logísticas</label>
-          <textarea id="log-${bid}-obs" style="width:100%;margin-top:4px;font-family:'Barlow',sans-serif;font-size:13px;padding:8px 10px;border:1px solid var(--bd);border-radius:var(--r);background:var(--s2);color:var(--tx);resize:vertical;min-height:44px" placeholder="Descreva incorreções logísticas..."></textarea>
+          <label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;color:var(--tx2)">Obs. logística <span style="color:var(--rnok);font-size:10px;font-weight:500;text-transform:none">(obrigatório para itens em vermelho)</span></label>
+          <textarea id="log-${bid}-obs" style="width:100%;margin-top:4px;font-family:'Barlow',sans-serif;font-size:13px;padding:8px 10px;border:1px solid var(--bd);border-radius:var(--r);background:var(--s2);color:var(--tx);resize:vertical;min-height:44px" placeholder="Descreva as incorreções logísticas identificadas..."></textarea>
         </div>
       </div>
       <div class="sep"></div>
